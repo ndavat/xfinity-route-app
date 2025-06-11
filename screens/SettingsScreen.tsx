@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RouterConnectionService } from '../services/RouterConnectionService';
+import { Config, ConfigUtils } from '../utils/config';
 import { toast } from 'sonner-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -14,14 +15,14 @@ export default function SettingsScreen() {
   const [isTesting, setIsTesting] = useState(false);
 
   // Router configuration (HTTP only)
-  const [routerIp, setRouterIp] = useState('10.0.0.1');
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('password1');
+  const [routerIp, setRouterIp] = useState(Config.router.defaultIp);
+  const [username, setUsername] = useState(Config.router.defaultUsername);
+  const [password, setPassword] = useState(Config.router.defaultPassword);
   
   // App settings
-  const [useDebugMode, setUseDebugMode] = useState(false);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
-  const [useMockData, setUseMockData] = useState(false);
+  const [useDebugMode, setUseDebugMode] = useState(Config.app.debugMode);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(Config.development.enableAdvancedSettings);
+  const [useMockData, setUseMockData] = useState(Config.app.mockDataMode);
 
   useEffect(() => {
     loadSettings();
@@ -32,8 +33,9 @@ export default function SettingsScreen() {
     try {
       // Load router configuration
       const routerConfig = await RouterConnectionService.getRouterConfig();
-      setRouterIp(routerConfig.ip || '10.0.0.1');
-      setUsername(routerConfig.username || 'admin');
+      const defaultConfig = ConfigUtils.getDefaultRouterConfig();
+      setRouterIp(routerConfig.ip || defaultConfig.ip);
+      setUsername(routerConfig.username || defaultConfig.username);
       setPassword(routerConfig.password || '');
       
       // Load app settings
@@ -203,9 +205,10 @@ export default function SettingsScreen() {
           onPress: async () => {
             setIsLoading(true);
             try {
+              const defaultConfig = ConfigUtils.getDefaultRouterConfig();
               await RouterConnectionService.saveRouterConfig({
-                ip: '10.0.0.1',
-                username: 'admin',
+                ip: defaultConfig.ip,
+                username: defaultConfig.username,
                 password: '',
               });
               
@@ -214,8 +217,8 @@ export default function SettingsScreen() {
               await AsyncStorage.removeItem('use_mock_data');
               
               // Reset state
-              setRouterIp('10.0.0.1');
-              setUsername('admin');
+              setRouterIp(defaultConfig.ip);
+              setUsername(defaultConfig.username);
               setPassword('');
               setUseDebugMode(false);
               setShowAdvancedOptions(false);
@@ -308,7 +311,7 @@ export default function SettingsScreen() {
             <Text style={styles.label}>Router IP Address</Text>
             <TextInput
               style={styles.input}
-              placeholder="10.0.0.1"
+              placeholder={Config.router.defaultIp}
               value={routerIp}
               onChangeText={setRouterIp}
               keyboardType="numeric"
@@ -319,7 +322,7 @@ export default function SettingsScreen() {
             <Text style={styles.label}>Username</Text>
             <TextInput
               style={styles.input}
-              placeholder="admin"
+              placeholder={Config.router.defaultUsername}
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
@@ -484,8 +487,8 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.appInfoCard}>
-          <Text style={styles.appName}>Xfinity Router App</Text>
-          <Text style={styles.appVersion}>Version 1.0.0 - HTTP Mode</Text>
+          <Text style={styles.appName}>{Config.app.name}</Text>
+          <Text style={styles.appVersion}>Version {Config.app.version} - HTTP Mode</Text>
           <Text style={styles.appCopyright}>© 2025 All rights reserved</Text>
         </View>
       </ScrollView>
