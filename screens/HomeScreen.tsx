@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { toast } from 'sonner-native';
 import { RouterConnectionService } from '../services/RouterConnectionService';
 import { EnvironmentAlert } from '../components/EnvironmentAlert';
+import { Config } from '../utils/config';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -55,7 +56,7 @@ export default function HomeScreen() {
     const advice = RouterConnectionService.getConnectionAdvice();
     
     const message = advice.canConnectToRouter 
-      ? 'Unable to connect to the router. Please check:\n\n• Router is powered on\n• IP address is correct (currently: 10.0.0.1)\n• Device is on the same network\n• Router credentials are valid'
+      ? `Unable to connect to the router. Please check:\n\n• Router is powered on\n• IP address is correct (currently: ${Config.router.defaultIp})\n• Device is on the same network\n• Router credentials are valid`
       : `${advice.reason}\n\nSolutions:\n${advice.solutions.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
 
     Alert.alert(

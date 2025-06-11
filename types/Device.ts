@@ -19,4 +19,5 @@ export interface RouterConfig {
   ip: string;
   username: string;
   password: string;
+  useHttps?: boolean;
 }

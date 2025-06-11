@@ -38,7 +38,7 @@ export default function DevicesScreen() {
   };
 
   const handleDevicePress = (device: Device) => {
-    navigation.navigate('DeviceControl', { device } as never);
+    (navigation as any).navigate('DeviceControl', { device });
   };
 
   const filteredDevices = devices.filter(device => {

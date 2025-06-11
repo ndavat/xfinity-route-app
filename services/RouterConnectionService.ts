@@ -2,17 +2,14 @@ import { Device } from '../types/Device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { parse } from 'node-html-parser';
 import axios from 'axios';
+import { Config, ConfigUtils } from '../utils/config';
 
-// Default router credentials (can be changed in settings)
-const DEFAULT_ROUTER_CONFIG = {
-  ip: '10.0.0.1',
-  username: 'admin',
-  password: 'password1',
-};
+// Default router credentials (loaded from environment variables)
+const DEFAULT_ROUTER_CONFIG = ConfigUtils.getDefaultRouterConfig();
 
-// Storage keys
-const ROUTER_CONFIG_KEY = 'xfinity_router_config';
-const DEVICE_NAMES_KEY = 'xfinity_device_names';
+// Storage keys (from environment variables)
+const ROUTER_CONFIG_KEY = Config.storage.routerConfigKey;
+const DEVICE_NAMES_KEY = Config.storage.deviceNamesKey;
 
 /**
  * Service for interacting with Xfinity router
@@ -58,7 +55,7 @@ export class RouterConnectionService {
     
     // Test 1: Basic connectivity
     try {
-      await axios.get(baseUrl, { timeout: 5000, validateStatus: () => true });
+      await axios.get(baseUrl, { timeout: Config.api.connectionTimeout, validateStatus: () => true });
       results.tests.push({ name: 'Basic Connectivity', status: '✅ PASS' });
     } catch (error: any) {
       results.tests.push({ 
@@ -74,7 +71,7 @@ export class RouterConnectionService {
       if (ip === config.ip) continue; // Skip current IP
       
       try {
-        await axios.get(`http://${ip}`, { timeout: 3000, validateStatus: () => true });
+        await axios.get(`http://${ip}`, { timeout: Config.api.connectionTimeout, validateStatus: () => true });
         results.tests.push({ 
           name: `Alternative IP (${ip})`, 
           status: '✅ FOUND', 
@@ -87,7 +84,7 @@ export class RouterConnectionService {
     
     // Test 3: Protocol test (HTTPS availability)
     try {
-      await axios.get(`https://${config.ip}`, { timeout: 5000, validateStatus: () => true });
+      await axios.get(`https://${config.ip}`, { timeout: Config.api.connectionTimeout, validateStatus: () => true });
       results.tests.push({ 
         name: 'HTTPS Availability', 
         status: '⚠️ AVAILABLE', 
@@ -178,7 +175,7 @@ export class RouterConnectionService {
       
       // Try to connect to the router's login page
       const response = await axios.get(baseUrl, {
-        timeout: 15000, // Increased timeout to 15 seconds
+        timeout: Config.api.timeout,
         validateStatus: (status) => true, // Accept any status to handle it explicitly
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
