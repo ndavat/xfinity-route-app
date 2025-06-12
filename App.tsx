@@ -26,14 +26,14 @@ function RootStack() {
 
 export default function App() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider style={styles.container}>
+    <SafeAreaProvider style={styles.container}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <Toaster />
         <NavigationContainer>
           <RootStack />
         </NavigationContainer>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
