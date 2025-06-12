@@ -1,6 +1,6 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { Toaster } from 'sonner-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -26,14 +26,16 @@ function RootStack() {
 
 const App: React.FC = () => {
   return (
-    <SafeAreaProvider>
-      <GestureHandlerRootView style={{ flex: 1, height: '100%', width: '100%' }}>
-        <Toaster />
-        <NavigationContainer>
-          <RootStack />
-        </NavigationContainer>
-      </GestureHandlerRootView>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaProvider>
+        <View style={styles.container}>
+          <Toaster />
+          <NavigationContainer>
+            <RootStack />
+          </NavigationContainer>
+        </View>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
