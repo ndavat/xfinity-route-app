@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { Toaster } from 'sonner-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import HomeScreen from "./screens/HomeScreen"
 import DevicesScreen from "./screens/DevicesScreen"
 import DeviceControlScreen from "./screens/DeviceControlScreen"
@@ -25,12 +26,14 @@ function RootStack() {
 
 export default function App() {
   return (
-    <SafeAreaProvider style={styles.container}>
-      <Toaster />
-      <NavigationContainer>
-        <RootStack />
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider style={styles.container}>
+        <Toaster />
+        <NavigationContainer>
+          <RootStack />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
