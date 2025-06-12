@@ -24,10 +24,10 @@ function RootStack() {
   );
 }
 
-export default function App() {
+const App: React.FC = () => {
   return (
-    <SafeAreaProvider style={styles.container}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1, height: '100%', width: '100%' }}>
         <Toaster />
         <NavigationContainer>
           <RootStack />
@@ -36,6 +36,8 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+export default App;
 
 const styles = StyleSheet.create({
   container: {

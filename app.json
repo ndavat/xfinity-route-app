@@ -25,7 +25,8 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "name": "Xfinity Router App"
+      "name": "Xfinity Router App",
+      "bundler": "metro"
     },
     "description": "Router management app for Xfinity routers - monitor devices and control settings",
     "extra": {
