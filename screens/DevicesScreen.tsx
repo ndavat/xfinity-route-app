@@ -49,7 +49,9 @@ export default function DevicesScreen() {
       hostname: device.hostname || device.ip,
       connectionType: device.connectionType || 'WiFi',
       isBlocked: Boolean(device.isBlocked),
-      customName: device.customName || device.hostname || device.ip
+      customName: device.customName || device.hostname || device.ip,
+      isOnline: typeof device.isOnline === 'boolean' ? device.isOnline : true,
+      networkDetails: device.networkDetails || {}
     };
 
     console.log('Navigating to device control with:', validDevice);

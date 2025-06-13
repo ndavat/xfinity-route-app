@@ -203,7 +203,8 @@ export default function DeviceControlScreen() {
 
   // Redirect back if no device data
   useEffect(() => {
-    if (!route.params?.device) {
+    const params = route.params as { device?: Device };
+    if (!params?.device) {
       console.error('No device data provided to DeviceControlScreen');
       toast.error('Error: Device information not available');
       navigation.goBack();

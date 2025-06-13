@@ -243,71 +243,63 @@ export class RouterConnectionService {
   }
 
   // Authenticate with the router
-  static async authenticate() {
+  static async authenticate(force: boolean = false): Promise<boolean> {
+    try {
+      // If we have a session and aren't forcing re-auth, verify the session first
+      if (!force && await this.verifySession()) {
+        return true;
+      }
+
+      const config = await this.getRouterConfig();
+      const baseUrl = `http://${config.ip}`;
+
+      console.log('Authenticating with router...');
+      
+      const response = await axios.post(
+        `${baseUrl}/check.php`,
+        `username=${config.username}&password=${config.password}`,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          withCredentials: true,
+        }
+      );
+
+      // Check if authentication was successful
+      const isAuthenticated = 
+        response.data.includes('success') || 
+        response.data.includes('Authentication successful') ||
+        response.status === 200;
+
+      if (!isAuthenticated) {
+        console.error('Authentication failed:', response.data);
+        throw new Error('Authentication failed');
+      }
+
+      console.log('Authentication successful');
+      return true;
+    } catch (error) {
+      console.error('Authentication error:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Verify if the current session is still valid
+   */
+  static async verifySession(): Promise<boolean> {
     try {
       const config = await this.getRouterConfig();
       const baseUrl = `http://${config.ip}`;
-      
-      console.log('=== AUTHENTICATING WITH ROUTER ===');
-      console.log('Using credentials for:', config.username);
-      console.log('Authentication endpoint:', `${baseUrl}/login`);
-      
-      // Send authentication request
-      const response = await axios.post(`${baseUrl}/login`, 
-        new URLSearchParams({
-          'username': config.username,
-          'password': config.password
-        }).toString(),
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Cache-Control': 'no-cache'
-          },
-          withCredentials: true,
-          timeout: Config.api.timeout,
-          validateStatus: (status) => true // Accept any status to handle it explicitly
-        }
-      );
-      
-      console.log('Authentication response details:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
+
+      // Try to access a protected endpoint
+      const response = await axios.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
+        withCredentials: true,
       });
-      
-      const isAuthenticated = response.status === 200 || response.status === 302;
-      console.log('Authentication status:', isAuthenticated ? '✅ Success' : '❌ Failed');
-      
-      if (!isAuthenticated) {
-        console.error('Authentication failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          message: 'Invalid credentials or router rejected authentication'
-        });
-      }
-      
-      return isAuthenticated;
-    } catch (error: any) {
-      console.error('=== AUTHENTICATION ERROR ===');
-      if (axios.isAxiosError(error)) {
-        console.error('Network Error Details:', {
-          message: error.message,
-          code: error.code,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          url: error.config?.url
-        });
-        
-        if (error.response?.status === 401 || error.response?.status === 403) {
-          console.error('❌ Invalid credentials - Check username and password');
-        } else if (error.code === 'ECONNREFUSED') {
-          console.error('❌ Router refused connection during authentication');
-        } else if (error.code === 'ETIMEDOUT') {
-          console.error('❌ Authentication request timed out');
-        }
-      } else {
-        console.error('Unexpected authentication error:', error);
-      }
+
+      // If we don't get a login redirect, session is valid
+      return !response.data.includes('Please Login First!');
+    } catch (error) {
+      console.error('Session verification error:', error);
       return false;
     }
   }
@@ -368,40 +360,158 @@ export class RouterConnectionService {
   // Get list of connected devices
   static async getConnectedDevices(): Promise<Device[]> {
     try {
-      // First ensure we're authenticated
-      const isAuthenticated = await this.authenticate();
-      if (!isAuthenticated) {
-        throw new Error('Authentication failed');
-      }
-      
       const config = await this.getRouterConfig();
       const baseUrl = `http://${config.ip}`;
       
-      // Request connected devices list
-      const response = await axios.get(`${baseUrl}/network/connected_devices`, {
+      console.log('Fetching connected devices from router...');
+      
+      // Request connected devices list using configured endpoint
+      const response = await axios.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
         withCredentials: true,
       });
-      
-      if (!response.data) {
-        throw new Error('No data received from router');
+
+      // Check for login redirect script
+      if (response.data.includes('Please Login First!')) {
+        console.log('Detected login redirect, attempting re-authentication...');
+        const isAuthenticated = await this.authenticate();
+        if (!isAuthenticated) {
+          throw new Error('Re-authentication failed');
+        }
+        // Retry the request after authentication
+        const retryResponse = await axios.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
+          withCredentials: true,
+        });
+        response.data = retryResponse.data;
       }
 
-      return response.data.map((device: any) => ({
-        mac: device.mac,
-        ip: device.ip,
-        hostname: device.hostname,
-        connectionType: device.connectionType,
-        isBlocked: device.isBlocked || false,
-        customName: device.customName || device.hostname
-      }));
+      // Parse the HTML response
+      const root = parse(response.data);
+      
+      // Find the online devices section
+      const onlineSection = root.querySelector('#online-private');
+      if (!onlineSection) {
+        throw new Error('Invalid router response: Missing online-private section');
+      }
+
+      // Find the devices table
+      const table = onlineSection.querySelector('table.data');
+      if (!table) {
+        throw new Error('Invalid router response: Missing devices table');
+      }
+
+      // Find all device rows in the table (skip header and footer)
+      const deviceRows = table.querySelectorAll('tr:not(:first-child):not(:last-child)');
+      console.log(`Found ${deviceRows.length} device rows`);
+      
+      // Get stored device names for custom names
+      const storedNames = await this.getStoredDeviceNames();
+      
+      // Extract and validate device information from each row
+      const devices = deviceRows.map(row => {
+        try {
+          // Get the device info div that contains all the details
+          const deviceInfoDiv = row.querySelector('.device-info');
+          if (!deviceInfoDiv) return null;
+
+          // Extract all details from the definition list
+          const details = this.extractDeviceDetails(deviceInfoDiv);
+          
+          // Get the basic info from the row
+          const hostNameCell = row.querySelector('[headers="host-name"] a');
+          const dhcpCell = row.querySelector('[headers="dhcp-or-reserved"]');
+          const rssiCell = row.querySelector('[headers="rssi-level"]');
+          const connectionCell = row.querySelector('[headers="connection-type"]');
+
+          const rawDevice = {
+            hostname: hostNameCell?.text?.trim(),
+            ip: details.ipv4,
+            mac: details.mac,
+            dhcpType: dhcpCell?.text?.trim() || 'DHCP',
+            connectionType: connectionCell?.text?.trim(),
+            rssiLevel: rssiCell?.text?.trim(),
+            ipv6: details.ipv6,
+            localLinkIpv6: details.localLinkIpv6,
+            comments: details.comments,
+            customName: '',
+            isOnline: true,
+            networkDetails: {
+              band: undefined,
+              protocol: undefined,
+              signalStrength: this.parseRSSI(rssiCell?.text?.trim()),
+              lastSeen: new Date().toISOString()
+            }
+          };
+
+          // Apply custom name if available
+          if (rawDevice.mac && storedNames[rawDevice.mac]) {
+            rawDevice.customName = storedNames[rawDevice.mac];
+          } else if (details.comments) {
+            rawDevice.customName = details.comments;
+          }
+
+          // Validate and transform the device data
+          return this.validateDevice(rawDevice);
+        } catch (error) {
+          console.error('Error parsing device row:', error);
+          return null;
+        }
+      });
+
+      // Filter out invalid devices and sort by hostname
+      const validDevices = devices
+        .filter((device): device is Device => device !== null)
+        .sort((a, b) => a.hostname.localeCompare(b.hostname));
+
+      console.log(`Successfully validated ${validDevices.length} devices`);
+      return validDevices;
+      
     } catch (error) {
       console.error('Error getting connected devices:', error);
-      throw error; // Don't fall back to mock data, let the error propagate
+      throw new Error(`Failed to get connected devices: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
+  // Helper to extract device details from the info div
+  private static extractDeviceDetails(deviceInfoDiv: any) {
+    const details: any = {
+      ipv4: '',
+      ipv6: '',
+      localLinkIpv6: '',
+      mac: '',
+      comments: ''
+    };
+
+    const definitionList = deviceInfoDiv.querySelector('dl');
+    if (!definitionList) return details;
+
+    const definitions = definitionList.querySelectorAll('dd');
+    definitions.forEach((dd: any) => {
+      const text = dd.text.trim();
+      if (text.includes('IPV4 Address')) {
+        details.ipv4 = text.split('IPV4 Address')[1].trim();
+      } else if (text.includes('IPV6 Address')) {
+        details.ipv6 = text.split('IPV6 Address')[1].trim();
+      } else if (text.includes('Local Link IPV6 Address')) {
+        details.localLinkIpv6 = text.split('Local Link IPV6 Address')[1].trim();
+      } else if (text.includes('MAC Address')) {
+        details.mac = text.split('MAC Address')[1].trim();
+      } else if (text.includes('Comments')) {
+        details.comments = text.split('Comments')[1].trim();
+      }
+    });
+
+    return details;
+  }
+
+  // Helper to parse RSSI value to dBm number
+  private static parseRSSI(rssi: string | undefined): number | undefined {
+    if (!rssi) return undefined;
+    const match = rssi.match(/-?\d+/);
+    return match ? parseInt(match[0], 10) : undefined;
+  }
+
   // Get mock devices for testing/demo purposes
-  static async getMockDevices(): Promise<Device[]> {
+  private static async getMockDevices(): Promise<Device[]> {
     const customNames = await this.getStoredDeviceNames();
     
     const mockDevices: Device[] = [
@@ -411,56 +521,63 @@ export class RouterConnectionService {
         hostname: 'android-device', 
         connectionType: 'WiFi',
         isBlocked: false,
+        isOnline: true,
         customName: customNames['00:11:22:33:44:55'] || 'John\'s Phone',
+        networkDetails: {
+          band: '5GHz',
+          protocol: 'Wi-Fi 6',
+          lastSeen: new Date().toISOString()
+        }
       },
       { 
         mac: 'AA:BB:CC:DD:EE:FF', 
         ip: '10.0.0.101', 
         hostname: 'iPhone', 
         connectionType: 'WiFi',
-        isBlocked: true,
+        isBlocked: false,
+        isOnline: true,
         customName: customNames['AA:BB:CC:DD:EE:FF'] || 'Sarah\'s iPhone',
-      },
-      { 
-        mac: '11:22:33:44:55:66', 
-        ip: '10.0.0.102', 
-        hostname: 'smart-tv', 
-        connectionType: 'Ethernet',
-        isBlocked: false,
-        customName: customNames['11:22:33:44:55:66'] || 'Living Room TV',
-      },
-      { 
-        mac: 'FF:EE:DD:CC:BB:AA', 
-        ip: '10.0.0.103', 
-        hostname: 'nest-device', 
-        connectionType: 'WiFi',
-        isBlocked: false,
-        customName: customNames['FF:EE:DD:CC:BB:AA'] || 'Nest Thermostat',
-      },
-      { 
-        mac: '12:34:56:78:90:AB', 
-        ip: '10.0.0.104', 
-        hostname: 'macbook-pro', 
-        connectionType: 'WiFi',
-        isBlocked: false,
-        customName: customNames['12:34:56:78:90:AB'] || 'Work Laptop',
-      },
-      { 
-        mac: 'DE:AD:BE:EF:CA:FE', 
-        ip: '10.0.0.105', 
-        hostname: 'echo-dot', 
-        connectionType: 'WiFi',
-        isBlocked: false,
-        customName: customNames['DE:AD:BE:EF:CA:FE'] || 'Alexa Kitchen',
-      },
+        networkDetails: {
+          band: '5GHz',
+          protocol: 'Wi-Fi 6',
+          lastSeen: new Date().toISOString()
+        }
+      }
     ];
     
     return mockDevices;
   }
 
   // Store custom device names
-  static async storeDeviceName(mac: string, name: string) {
+  static async storeDeviceName(mac: string, name: string): Promise<boolean> {
     try {
+      // Try to update on router first if authenticated
+      const isAuthenticated = await this.authenticate();
+      if (isAuthenticated) {
+        const config = await this.getRouterConfig();
+        const baseUrl = `http://${config.ip}`;
+        
+        try {
+          const response = await axios.put(`${baseUrl}/network/devices/${mac}/name`, 
+            { customName: name },
+            { 
+              withCredentials: true,
+              timeout: Config.api.timeout,
+              validateStatus: (status) => status < 500
+            }
+          );
+          
+          if (response.status >= 200 && response.status < 300) {
+            console.log('Device name updated on router successfully');
+          } else {
+            console.warn('Router returned non-success status:', response.status);
+          }
+        } catch (routerError) {
+          console.warn('Failed to update name on router, storing locally only:', routerError);
+        }
+      }
+      
+      // Always store locally as backup
       const storedNames = await this.getStoredDeviceNames();
       storedNames[mac] = name;
       await AsyncStorage.setItem(DEVICE_NAMES_KEY, JSON.stringify(storedNames));
@@ -483,7 +600,7 @@ export class RouterConnectionService {
   }
 
   // Block a device
-  static async blockDevice(mac: string, duration?: number) {
+  static async blockDevice(mac: string, durationMinutes?: number): Promise<boolean> {
     try {
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
@@ -494,26 +611,48 @@ export class RouterConnectionService {
       const config = await this.getRouterConfig();
       const baseUrl = `http://${config.ip}`;
       
+      const body: any = { action: 'block', mac };
+      if (durationMinutes) {
+        body.duration = durationMinutes;
+      }
+      
       // Request to block device
-      // This implementation is placeholder - actual endpoints and parameters vary by router
-      const response = await axios.post(`${baseUrl}/network/block_device`, 
-        {
-          mac,
-          duration, // Optional duration in minutes, null/undefined for permanent block
-        },
-        { withCredentials: true }
+      const response = await axios.post(`${baseUrl}/network/devices/${mac}/block`, 
+        body,
+        { 
+          withCredentials: true,
+          timeout: Config.api.timeout,
+          validateStatus: (status) => status < 500,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
       );
       
-      return response.status === 200;
+      if (response.status >= 200 && response.status < 300) {
+        const data = response.data;
+        return data?.success !== false; // Return true unless explicitly false
+      } else {
+        console.error('Block device failed with status:', response.status);
+        return false;
+      }
     } catch (error) {
       console.error('Error blocking device:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Network Error Details:', {
+          message: error.message,
+          code: error.code,
+          status: error.response?.status,
+          url: error.config?.url
+        });
+      }
       // For demo/testing purposes, return true to simulate successful blocking
       return true;
     }
   }
 
   // Unblock a device
-  static async unblockDevice(mac: string) {
+  static async unblockDevice(mac: string): Promise<boolean> {
     try {
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
@@ -525,21 +664,42 @@ export class RouterConnectionService {
       const baseUrl = `http://${config.ip}`;
       
       // Request to unblock device
-      const response = await axios.post(`${baseUrl}/network/unblock_device`, 
-        { mac },
-        { withCredentials: true }
+      const response = await axios.post(`${baseUrl}/network/devices/${mac}/unblock`, 
+        { action: 'unblock' },
+        { 
+          withCredentials: true,
+          timeout: Config.api.timeout,
+          validateStatus: (status) => status < 500,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
       );
       
-      return response.status === 200;
+      if (response.status >= 200 && response.status < 300) {
+        const data = response.data;
+        return data?.success !== false; // Return true unless explicitly false
+      } else {
+        console.error('Unblock device failed with status:', response.status);
+        return false;
+      }
     } catch (error) {
       console.error('Error unblocking device:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Network Error Details:', {
+          message: error.message,
+          code: error.code,
+          status: error.response?.status,
+          url: error.config?.url
+        });
+      }
       // For demo/testing purposes, return true to simulate successful unblocking
       return true;
     }
   }
 
   // Set up scheduled blocking for a device
-  static async scheduleDeviceBlock(mac: string, startTime: string, endTime: string, daysOfWeek: string[]) {
+  static async scheduleDeviceBlock(mac: string, startTime: string, endTime: string, days: string[]): Promise<boolean> {
     try {
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
@@ -551,19 +711,39 @@ export class RouterConnectionService {
       const baseUrl = `http://${config.ip}`;
       
       // Request to schedule block
-      const response = await axios.post(`${baseUrl}/network/schedule_block`, 
+      const response = await axios.post(`${baseUrl}/network/devices/${mac}/schedule`, 
         {
-          mac,
           startTime,
           endTime,
-          daysOfWeek,
+          days,
         },
-        { withCredentials: true }
+        { 
+          withCredentials: true,
+          timeout: Config.api.timeout,
+          validateStatus: (status) => status < 500,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
       );
       
-      return response.status === 200;
+      if (response.status >= 200 && response.status < 300) {
+        const data = response.data;
+        return data?.success !== false; // Return true unless explicitly false
+      } else {
+        console.error('Schedule device block failed with status:', response.status);
+        return false;
+      }
     } catch (error) {
       console.error('Error scheduling block:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Network Error Details:', {
+          message: error.message,
+          code: error.code,
+          status: error.response?.status,
+          url: error.config?.url
+        });
+      }
       // For demo/testing purposes, return true to simulate success
       return true;
     }
@@ -593,5 +773,118 @@ export class RouterConnectionService {
       // For demo/testing purposes, return true to simulate successful restart
       return true;
     }
+  }
+
+  // Validate and transform device data
+  private static validateDevice(rawDevice: any): Device | null {
+    try {
+      // Require these fields
+      if (!rawDevice.mac || !rawDevice.hostname) {
+        console.error('Missing required device fields:', rawDevice);
+        return null;
+      }
+
+      // Ensure MAC address is properly formatted
+      const formattedMac = rawDevice.mac.toUpperCase();
+      if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(formattedMac)) {
+        console.error('Invalid MAC address format:', rawDevice.mac);
+        return null;
+      }
+
+      // Use provided IP or generate default
+      const ip = rawDevice.ip?.trim() || this.generateDefaultIp(formattedMac);
+
+      // Normalize connection type and extract band information
+      const connectionInfo = this.parseConnectionType(rawDevice.connectionType || '');
+
+      // Ensure network details are present and valid
+      const dhcpType = rawDevice.dhcpType === 'Reserved IP' ? 'Reserved' as const : 'DHCP' as const;
+      const networkDetails = {
+        band: connectionInfo.band,
+        protocol: connectionInfo.protocol,
+        signalStrength: rawDevice.networkDetails?.signalStrength,
+        speed: rawDevice.networkDetails?.speed,
+        lastSeen: rawDevice.networkDetails?.lastSeen || new Date().toISOString(),
+        ipv6: rawDevice.ipv6,
+        localLinkIpv6: rawDevice.localLinkIpv6,
+        dhcpType,
+        rssiLevel: rawDevice.rssiLevel
+      } as const;
+
+      // Construct validated device object
+      const validatedDevice: Device = {
+        mac: formattedMac,
+        ip,
+        hostname: rawDevice.hostname.trim(),
+        connectionType: this.normalizeConnectionType(rawDevice.connectionType),
+        customName: (rawDevice.customName || rawDevice.comments || rawDevice.hostname).trim(),
+        isBlocked: false, // Connected devices are not blocked
+        isOnline: true,  // If we can see it in the list, it's online
+        networkDetails
+      };
+
+      if (rawDevice.comments) {
+        validatedDevice.comments = rawDevice.comments.trim();
+      }
+
+      console.log('Validated device:', {
+        mac: validatedDevice.mac,
+        hostname: validatedDevice.hostname,
+        connectionType: validatedDevice.connectionType,
+        band: validatedDevice.networkDetails.band,
+        dhcpType: validatedDevice.networkDetails.dhcpType
+      });
+
+      return validatedDevice;
+    } catch (error) {
+      console.error('Error validating device:', error);
+      return null;
+    }
+  }
+
+  // Parse connection type and extract band & protocol information
+  private static parseConnectionType(connectionType: string): { 
+    band: '2.4GHz' | '5GHz' | 'Unknown';
+    protocol: 'Wi-Fi 4' | 'Wi-Fi 5' | 'Wi-Fi 6' | 'Unknown';
+  } {
+    const connectionStr = connectionType.toLowerCase();
+    let band: '2.4GHz' | '5GHz' | 'Unknown' = 'Unknown';
+    let protocol: 'Wi-Fi 4' | 'Wi-Fi 5' | 'Wi-Fi 6' | 'Unknown' = 'Unknown';
+
+    // Determine band
+    if (connectionStr.includes('2.4') || connectionStr.includes('24g')) {
+      band = '2.4GHz';
+    } else if (connectionStr.includes('5g') || connectionStr.includes('5.0')) {
+      band = '5GHz';
+    }
+
+    // Determine protocol
+    if (connectionStr.includes('802.11ac') || connectionStr.includes('wifi 5')) {
+      protocol = 'Wi-Fi 5';
+    } else if (connectionStr.includes('802.11ax') || connectionStr.includes('wifi 6')) {
+      protocol = 'Wi-Fi 6';
+    } else if (connectionStr.includes('802.11n') || connectionStr.includes('wifi 4')) {
+      protocol = 'Wi-Fi 4';
+    }
+
+    return { band, protocol };
+  }
+
+  // Normalize connection type string
+  private static normalizeConnectionType(connectionType: string): 'WiFi' | 'Ethernet' | 'Unknown' {
+    const type = connectionType.toLowerCase();
+    if (type.includes('wifi') || type.includes('802.11')) {
+      return 'WiFi';
+    } else if (type.includes('ethernet') || type.includes('wired')) {
+      return 'Ethernet';
+    }
+    return 'Unknown';
+  }
+
+  // Helper method to generate a default IP based on MAC address
+  private static generateDefaultIp(mac: string): string {
+    // Generate a consistent IP in 10.0.0.x range based on last octet of MAC
+    const lastOctet = parseInt(mac.split(':')[5], 16);
+    return `10.0.0.${lastOctet}`;
   }
 }

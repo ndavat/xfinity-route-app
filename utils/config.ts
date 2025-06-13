@@ -34,6 +34,7 @@ export const Config = {
     defaultIp: getEnvVar('EXPO_PUBLIC_DEFAULT_ROUTER_IP', '10.0.0.1'),
     defaultUsername: getEnvVar('EXPO_PUBLIC_DEFAULT_USERNAME', 'admin'),
     defaultPassword: getEnvVar('EXPO_PUBLIC_DEFAULT_PASSWORD', 'password1'),
+    deviceEndpoint: getEnvVar('EXPO_PUBLIC_DEVICE_ENDPOINT', '/connected_devices_computers.php'),
     enableHttps: getEnvBoolean('EXPO_PUBLIC_ROUTER_ENABLE_HTTPS', false)
   },
 
