@@ -19,20 +19,38 @@ export class RouterConnectionService {
   static async getRouterConfig() {
     try {
       const storedConfig = await AsyncStorage.getItem(ROUTER_CONFIG_KEY);
-      return storedConfig ? JSON.parse(storedConfig) : DEFAULT_ROUTER_CONFIG;
+      // Use stored config if it exists, otherwise use default
+      const config = storedConfig ? JSON.parse(storedConfig) : {
+        ip: '10.0.0.1',
+        username: Config.router.defaultUsername,
+        password: Config.router.defaultPassword,
+      };
+      
+      // Always ensure mock mode is disabled
+      config.useMockData = false;
+      return config;
     } catch (error) {
       console.error('Error getting router config:', error);
-      return DEFAULT_ROUTER_CONFIG;
+      // Fallback to default configuration
+      return {
+        ip: '10.0.0.1',
+        username: Config.router.defaultUsername,
+        password: Config.router.defaultPassword,
+        useMockData: false
+      };
     }
   }
 
   // Save router configuration to storage
   static async saveRouterConfig(config: any) {
     try {
+      // Ensure mock mode is disabled
+      config.useMockData = false;
       await AsyncStorage.setItem(ROUTER_CONFIG_KEY, JSON.stringify({
         ...DEFAULT_ROUTER_CONFIG,
         ...config
       }));
+      await AsyncStorage.setItem('use_mock_data', 'false');
       return true;
     } catch (error) {
       console.error('Error saving router config:', error);
@@ -148,66 +166,64 @@ export class RouterConnectionService {
   // Check connection to router
   static async checkConnection() {
     try {
-      // Check if mock data mode is enabled
-      const useMockData = await AsyncStorage.getItem('use_mock_data');
-      if (useMockData === 'true') {
-        console.log('🎭 Mock mode enabled - simulating router connection');
-        return true;
-      }
-
-      // Check if we're in an environment that blocks HTTP requests
-      const advice = this.getConnectionAdvice();
-      if (!advice.canConnectToRouter) {
-        console.log('🚫 Cannot connect to router from this environment:', advice.reason);
-        console.log('💡 Possible solutions:');
-        advice.solutions.forEach((solution, index) => {
-          console.log(`   ${index + 1}. ${solution}`);
-        });
-        return false;
-      }
-
+      // Ensure we're in real mode
+      await AsyncStorage.setItem('use_mock_data', 'false');
+      
       const config = await this.getRouterConfig();
       const baseUrl = `http://${config.ip}`;
       
-      console.log('=== DEBUG TEST ===');
-      console.log('Router Config:', config);
+      console.log('=== CONNECTING TO REAL ROUTER ===');
+      console.log('Router Config:', {
+        ip: config.ip,
+        username: config.username,
+        useMockData: config.useMockData
+      });
       console.log('Attempting to connect to router at:', baseUrl);
       
       // Try to connect to the router's login page
       const response = await axios.get(baseUrl, {
         timeout: Config.api.timeout,
-        validateStatus: (status) => true, // Accept any status to handle it explicitly
+        validateStatus: (status) => true,
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Cache-Control': 'no-cache',
         },
-        withCredentials: false // Disable credentials for initial connection test
+        withCredentials: false
       });
       
-      console.log('Router response status:', response.status);
+      console.log('Router response details:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
       
       // If we get a response, consider it connected
       const isConnected = response.status < 400 || response.status === 401;
-      console.log('Router connection status:', isConnected ? 'Connected' : 'Disconnected');
+      console.log('Router connection status:', isConnected ? '✅ Connected' : '❌ Disconnected');
       
-      return isConnected; // 401 is "Unauthorized" which means the router is there but requires login
+      if (!isConnected) {
+        console.error('Connection failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          url: baseUrl
+        });
+        return false;
+      }
+      
+      return true;
     } catch (error: any) {
-      // Detailed error logging with specific error types
+      // Enhanced error logging
+      console.error('=== ROUTER CONNECTION ERROR ===');
       if (axios.isAxiosError(error)) {
-        const errorInfo = {
+        console.error('Network Error Details:', {
           message: error.message,
           code: error.code,
-          response: error.response?.status,
-          responseText: error.response?.statusText,
-          config: {
-            url: error.config?.url,
-            timeout: error.config?.timeout
-          }
-        };
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          url: error.config?.url,
+          timeout: error.config?.timeout
+        });
         
-        console.error('Router connection error:', errorInfo);
-        
-        // Log specific error messages for troubleshooting (but don't auto-enable mock)
         if (error.code === 'ECONNREFUSED') {
           console.error('❌ Connection refused - Router might be off or wrong IP address');
         } else if (error.code === 'ENOTFOUND') {
@@ -218,15 +234,9 @@ export class RouterConnectionService {
           console.error('❌ Network unreachable - Check your network connection');
         } else if (error.message.includes('CORS')) {
           console.error('❌ CORS error - Try using mobile app instead of web browser');
-        } else if (error.message.includes('Mixed Content') || error.code === 'ERR_NETWORK') {
-          console.error('❌ Mixed content error - HTTPS page cannot access HTTP router');
-          console.error('💡 Solutions:');
-          console.error('   1. Use the mobile app on your phone/tablet connected to the same WiFi');
-          console.error('   2. Run the app locally with HTTP (not in GitHub Codespace)');
-          console.error('   3. Enable mock mode for testing in browser');
         }
       } else {
-        console.error('Unexpected error during router connection:', error);
+        console.error('Unexpected error:', error);
       }
       return false;
     }
@@ -235,15 +245,12 @@ export class RouterConnectionService {
   // Authenticate with the router
   static async authenticate() {
     try {
-      // Check if mock data mode is enabled
-      const useMockData = await AsyncStorage.getItem('use_mock_data');
-      if (useMockData === 'true') {
-        console.log('🎭 Mock mode enabled - simulating authentication');
-        return true;
-      }
-
       const config = await this.getRouterConfig();
       const baseUrl = `http://${config.ip}`;
+      
+      console.log('=== AUTHENTICATING WITH ROUTER ===');
+      console.log('Using credentials for:', config.username);
+      console.log('Authentication endpoint:', `${baseUrl}/login`);
       
       // Send authentication request
       const response = await axios.post(`${baseUrl}/login`, 
@@ -254,16 +261,53 @@ export class RouterConnectionService {
         {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
+            'Cache-Control': 'no-cache'
           },
-          withCredentials: true, // Important for maintaining session cookies
+          withCredentials: true,
+          timeout: Config.api.timeout,
+          validateStatus: (status) => true // Accept any status to handle it explicitly
         }
       );
       
-      // Check if authentication was successful (typically by looking for success indicators in response)
-      // This is router-specific and might need adjustment for different routers
-      return response.status === 200;
-    } catch (error) {
-      console.error('Authentication error:', error);
+      console.log('Authentication response details:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+      
+      const isAuthenticated = response.status === 200 || response.status === 302;
+      console.log('Authentication status:', isAuthenticated ? '✅ Success' : '❌ Failed');
+      
+      if (!isAuthenticated) {
+        console.error('Authentication failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          message: 'Invalid credentials or router rejected authentication'
+        });
+      }
+      
+      return isAuthenticated;
+    } catch (error: any) {
+      console.error('=== AUTHENTICATION ERROR ===');
+      if (axios.isAxiosError(error)) {
+        console.error('Network Error Details:', {
+          message: error.message,
+          code: error.code,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          url: error.config?.url
+        });
+        
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          console.error('❌ Invalid credentials - Check username and password');
+        } else if (error.code === 'ECONNREFUSED') {
+          console.error('❌ Router refused connection during authentication');
+        } else if (error.code === 'ETIMEDOUT') {
+          console.error('❌ Authentication request timed out');
+        }
+      } else {
+        console.error('Unexpected authentication error:', error);
+      }
       return false;
     }
   }
@@ -324,18 +368,10 @@ export class RouterConnectionService {
   // Get list of connected devices
   static async getConnectedDevices(): Promise<Device[]> {
     try {
-      // Check if mock data mode is enabled first
-      const useMockData = await AsyncStorage.getItem('use_mock_data');
-      if (useMockData === 'true') {
-        console.log('🎭 Mock mode enabled - returning simulated devices');
-        return this.getMockDevices();
-      }
-
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
       if (!isAuthenticated) {
-        console.log('🎭 Authentication failed - falling back to mock data');
-        return this.getMockDevices();
+        throw new Error('Authentication failed');
       }
       
       const config = await this.getRouterConfig();
@@ -346,18 +382,21 @@ export class RouterConnectionService {
         withCredentials: true,
       });
       
-      // Get custom device names from storage
-      const customNames = await this.getStoredDeviceNames();
-      
-      // This is a placeholder for parsing router-specific HTML/JSON
-      // Actual implementation depends on your specific router's web interface
-      // For now, return mock data for testing
-      
-      return this.getMockDevices();
+      if (!response.data) {
+        throw new Error('No data received from router');
+      }
+
+      return response.data.map((device: any) => ({
+        mac: device.mac,
+        ip: device.ip,
+        hostname: device.hostname,
+        connectionType: device.connectionType,
+        isBlocked: device.isBlocked || false,
+        customName: device.customName || device.hostname
+      }));
     } catch (error) {
       console.error('Error getting connected devices:', error);
-      console.log('🎭 Connection failed - falling back to mock data');
-      return this.getMockDevices();
+      throw error; // Don't fall back to mock data, let the error propagate
     }
   }
 

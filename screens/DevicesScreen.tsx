@@ -22,6 +22,7 @@ export default function DevicesScreen() {
     setIsLoading(true);
     try {
       const connectedDevices = await RouterConnectionService.getConnectedDevices();
+      console.log('Fetched devices:', connectedDevices);
       setDevices(connectedDevices);
     } catch (error) {
       console.error('Error fetching devices:', error);
@@ -35,10 +36,28 @@ export default function DevicesScreen() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchDevices();
-  };
+  };  const handleDevicePress = (device: Device) => {
+    if (!device?.mac || !device?.ip) {
+      console.error('Invalid device data:', device);
+      toast.error('Error: Invalid device data');
+      return;
+    }
 
-  const handleDevicePress = (device: Device) => {
-    (navigation as any).navigate('DeviceControl', { device });
+    const validDevice: Device = {
+      mac: device.mac,
+      ip: device.ip,
+      hostname: device.hostname || device.ip,
+      connectionType: device.connectionType || 'WiFi',
+      isBlocked: Boolean(device.isBlocked),
+      customName: device.customName || device.hostname || device.ip
+    };
+
+    console.log('Navigating to device control with:', validDevice);
+    
+    // Type-safe navigation
+    (navigation as any).navigate('DeviceControl', {
+      device: validDevice
+    });
   };
 
   const filteredDevices = devices.filter(device => {

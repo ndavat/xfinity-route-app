@@ -73,17 +73,16 @@ export default function HomeScreen() {
           onPress: () => navigation.navigate('Settings' as never),
           style: 'default'
         },
-        {
-          text: 'Use Mock Mode',
+        {          text: 'Force Real Mode',
           onPress: async () => {
             try {
-              await RouterConnectionService.saveRouterConfig({ useMockData: true });
-              // Enable mock mode in AsyncStorage
-              await AsyncStorage.setItem('use_mock_data', 'true');
-              toast.success('Mock mode enabled for testing');
+              await RouterConnectionService.saveRouterConfig({ useMockData: false });
+              // Force real mode
+              await AsyncStorage.setItem('use_mock_data', 'false');
+              toast.success('Real mode enforced');
               checkRouterConnection();
             } catch (error) {
-              toast.error('Failed to enable mock mode');
+              toast.error('Failed to enable real mode');
             }
           },
           style: 'default'

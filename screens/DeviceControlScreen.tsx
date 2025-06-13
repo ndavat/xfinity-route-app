@@ -12,10 +12,33 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 export default function DeviceControlScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { device } = route.params as { device: Device };
   
-  const [customName, setCustomName] = useState(device.customName || '');
-  const [isBlocked, setIsBlocked] = useState(device.isBlocked);
+  useEffect(() => {
+    // Check for valid device data immediately
+    const params = route.params as { device?: Device };
+    if (!params?.device?.mac || !params?.device?.ip) {
+      console.error('Invalid or missing device data:', params?.device);
+      toast.error('Error: Device information is incomplete');
+      navigation.goBack();
+      return;
+    }
+  }, []);
+
+  // Get device data with proper type checking
+  const params = route.params as { device?: Device };
+  const device = params?.device || null;
+  
+  // Redirect if no device data
+  if (!device) {
+    return (
+      <View style={styles.container}>
+        <Text>Loading device information...</Text>
+      </View>
+    );
+  }
+  
+  const [customName, setCustomName] = useState(device.customName || device.hostname || device.ip);
+  const [isBlocked, setIsBlocked] = useState(Boolean(device.isBlocked));
   const [isSaving, setIsSaving] = useState(false);
   
   // Temporary block
@@ -177,6 +200,15 @@ export default function DeviceControlScreen() {
       ))}
     </View>
   );
+
+  // Redirect back if no device data
+  useEffect(() => {
+    if (!route.params?.device) {
+      console.error('No device data provided to DeviceControlScreen');
+      toast.error('Error: Device information not available');
+      navigation.goBack();
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>

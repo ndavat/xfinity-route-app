@@ -34,8 +34,7 @@ export const Config = {
     defaultIp: getEnvVar('EXPO_PUBLIC_DEFAULT_ROUTER_IP', '10.0.0.1'),
     defaultUsername: getEnvVar('EXPO_PUBLIC_DEFAULT_USERNAME', 'admin'),
     defaultPassword: getEnvVar('EXPO_PUBLIC_DEFAULT_PASSWORD', 'password1'),
-    enableHttps: getEnvBoolean('EXPO_PUBLIC_ENABLE_HTTPS', false),
-    validateSsl: getEnvBoolean('EXPO_PUBLIC_VALIDATE_SSL', false)
+    enableHttps: getEnvBoolean('EXPO_PUBLIC_ROUTER_ENABLE_HTTPS', false)
   },
 
   // API Configuration
@@ -51,7 +50,9 @@ export const Config = {
     name: getEnvVar('EXPO_PUBLIC_APP_NAME', 'Xfinity Router App'),
     version: getEnvVar('EXPO_PUBLIC_APP_VERSION', '1.0.0'),
     debugMode: getEnvBoolean('EXPO_PUBLIC_DEBUG_MODE', false),
-    mockDataMode: getEnvBoolean('EXPO_PUBLIC_MOCK_DATA_MODE', false)
+    // Force mock mode to always be false
+    mockDataMode: false,
+    forceRealMode: getEnvBoolean('EXPO_PUBLIC_FORCE_REAL_MODE', true)
   },
 
   // Development Settings
