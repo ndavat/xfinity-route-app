@@ -526,6 +526,7 @@ export class RouterConnectionService {
         networkDetails: {
           band: '5GHz',
           protocol: 'Wi-Fi 6',
+          dhcpType: 'DHCP',
           lastSeen: new Date().toISOString()
         }
       },
@@ -540,6 +541,7 @@ export class RouterConnectionService {
         networkDetails: {
           band: '5GHz',
           protocol: 'Wi-Fi 6',
+          dhcpType: 'DHCP',
           lastSeen: new Date().toISOString()
         }
       }
