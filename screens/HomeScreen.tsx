@@ -247,12 +247,12 @@ export default function HomeScreen() {
               'Devices'
             )}
             
-            {renderFeatureCard(
+            {/* {renderFeatureCard(
               'block', 
               'Device Control', 
               'Block, unblock, or schedule access for specific devices',
               'DeviceControl'
-            )}
+            )} */}
 
             {renderFeatureCard(
               'settings', 

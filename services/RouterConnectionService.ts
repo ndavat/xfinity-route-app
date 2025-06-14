@@ -338,13 +338,67 @@ export class RouterConnectionService {
       // This is a placeholder for parsing router-specific HTML/JSON
       // Actual implementation depends on your specific router's web interface
       // Use parse() for HTML content parsing
+      // Navigate to network_setup.php to get Internet status and System Uptime
+      const networkSetupResponse = await axios.get(`${baseUrl}/network_setup.php`, {
+        withCredentials: true,
+      });
       
-      // Return mock data for now
+      // Parse the HTML response
+      const networkSetupRoot = parse(networkSetupResponse.data);
+      
+      // Extract Internet status
+      let internetStatus = 'Unknown';
+      const internetStatusElement = networkSetupRoot.querySelector('div.form-row span.readonlyLabel:contains("Internet:")');
+      if (internetStatusElement) {
+        const valueElement = internetStatusElement.parentNode.querySelector('span.value');
+        if (valueElement) {
+          internetStatus = valueElement.text.trim();
+        }
+      }
+      
+      // Extract System Uptime
+      let systemUptime = 'Unknown';
+      const uptimeElement = networkSetupRoot.querySelector('div.form-row span.readonlyLabel:contains("System Uptime:")');
+      if (uptimeElement) {
+        const valueElement = uptimeElement.parentNode.querySelector('span.value');
+        if (valueElement) {
+          systemUptime = valueElement.text.trim();
+        }
+      }
+      
+      // Get connected devices count from connection_status.php
+      let connectedDevices = 0;
+      try {
+        const connectionStatusResponse = await axios.get(`${baseUrl}/connection_status.php`, {
+          withCredentials: true,
+        });
+        
+        const connectionStatusRoot = parse(connectionStatusResponse.data);
+        
+        // Find the element containing "No of Clients connected:" label
+        const clientsElement = connectionStatusRoot.querySelector('div.form-row span.readonlyLabel:contains("No of Clients connected:")');
+        if (clientsElement) {
+          // Get the parent div and then find the value span
+          const valueElement = clientsElement.parentNode.querySelector('span.value');
+          if (valueElement) {
+            // Extract and parse the number
+            const clientsText = valueElement.text.trim();
+            connectedDevices = parseInt(clientsText, 10) || 0;
+            console.log(`Found ${connectedDevices} connected clients`);
+          }
+        } else {
+          console.log('Could not find "No of Clients connected:" element');
+        }
+      } catch (connectionError) {
+        console.error('Error fetching connection status:', connectionError);
+        // If we can't get the connected devices count, use a fallback value
+        connectedDevices = 0;
+      }
+      
       return {
-        status: 'Online',
-        uptime: '3 days, 7 hours',
-        connectedDevices: 12,
-        // Additional info could be extracted from response
+        status: internetStatus,
+        uptime: systemUptime,
+        connectedDevices: connectedDevices,
       };
     } catch (error) {
       console.error('Error getting router info:', error);
