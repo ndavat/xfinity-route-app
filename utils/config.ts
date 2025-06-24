@@ -35,6 +35,7 @@ export const Config = {
     defaultUsername: getEnvVar('EXPO_PUBLIC_DEFAULT_USERNAME', 'admin'),
     defaultPassword: getEnvVar('EXPO_PUBLIC_DEFAULT_PASSWORD', 'password1'),
     deviceEndpoint: getEnvVar('EXPO_PUBLIC_DEVICE_ENDPOINT', '/connected_devices_computers.php'),
+    restoreRebootEndpoint: getEnvVar('EXP_PUBLIC_RESTORE_REBOOT', '/restore_reboot.php'),
     enableHttps: getEnvBoolean('EXPO_PUBLIC_ROUTER_ENABLE_HTTPS', false)
   },
 

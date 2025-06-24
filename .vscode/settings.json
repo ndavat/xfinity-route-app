@@ -3,5 +3,6 @@
         "activityBar.background": "#203303",
         "titleBar.activeBackground": "#2D4705",
         "titleBar.activeForeground": "#F4FDE5"
-    }
+    },
+    "zencoder.enableRepoIndexing": true
 }

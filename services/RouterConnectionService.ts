@@ -806,28 +806,66 @@ export class RouterConnectionService {
   }
 
   // Restart the router
-  static async restartRouter() {
+  static async restartRouter(): Promise<boolean> {
     try {
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
       if (!isAuthenticated) {
         throw new Error('Authentication failed');
       }
-      
+
       const config = await this.getRouterConfig();
       const baseUrl = `http://${config.ip}`;
+      const url = `${baseUrl}${Config.router.restoreRebootEndpoint}`;
       
+      console.log('Restoring and rebooting router at:', url);
+
+      // Create form data exactly as the web interface does
+      const formData = new URLSearchParams();
+      formData.append('resetInfo', JSON.stringify(['btn1', 'Device', 'admin']));
+
       // Send restart command
-      const response = await axios.post(`${baseUrl}/api/v1/router/reboot`, 
-        {},
-        { withCredentials: true }
+      await axios.post(
+        url,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          withCredentials: true,
+          timeout: 10000, // 10 second timeout, as router will reboot
+          validateStatus: (status) => status >= 200 && status < 600,
+        }
       );
+
+      // If we get here, the reboot command was accepted
+      console.log('Router restart command sent successfully, waiting for reboot...');
       
-      return response.status === 200;
+      // Wait 4 minutes before trying to reconnect, just like the web interface
+      await new Promise(resolve => setTimeout(resolve, 4 * 60 * 1000));
+      
+      // Try to reconnect
+      let reconnected = false;
+      for (let i = 0; i < 3; i++) {
+        try {
+          await axios.get(baseUrl, { timeout: 5000 });
+          reconnected = true;
+          break;
+        } catch (error) {
+          console.log('Reconnection attempt failed, retrying in 2 minutes...');
+          await new Promise(resolve => setTimeout(resolve, 2 * 60 * 1000));
+        }
+      }
+
+      return reconnected;
     } catch (error) {
+      // A timeout error is expected as the router reboots
+      if (axios.isAxiosError(error) && (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED')) {
+        console.log('Router restart initiated (timeout is expected).');
+        return true;
+      }
       console.error('Error restarting router:', error);
-      // For demo/testing purposes, return true to simulate successful restart
-      return true;
+      return false;
     }
   }
 
