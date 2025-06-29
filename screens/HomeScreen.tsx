@@ -6,11 +6,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { toast } from 'sonner-native';
 import { RouterConnectionService } from '../services/RouterConnectionService';
+import { ServiceFactory } from '../services/ServiceInterfaces';
+import { useMockMode } from '../contexts/MockModeContext';
 import { EnvironmentAlert } from '../components/EnvironmentAlert';
+import { MockModeIndicator } from '../components/MockModeIndicator';
 import { Config } from '../utils/config';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
+  const { isMockMode } = useMockMode();
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [routerInfo, setRouterInfo] = useState({
@@ -19,36 +23,58 @@ export default function HomeScreen() {
     connectedDevices: 0,
   });
 
+  // Create services based on current mode
+  const deviceService = ServiceFactory.createDeviceService(isMockMode);
+  const routerService = ServiceFactory.createRouterService(isMockMode);
+
+  console.log('HomeScreen: Mode is', isMockMode ? 'MOCK' : 'LIVE', 'at render time');
+
   useEffect(() => {
     checkRouterConnection();
-  }, []);
+  }, [isMockMode]); // Re-check when mode changes
 
   const checkRouterConnection = async () => {
     setIsLoading(true);
+    console.log('HomeScreen: Checking router connection, isMockMode:', isMockMode);
+    
     try {
-      const connected = await RouterConnectionService.checkConnection();
+      console.log('HomeScreen: Calling routerService.checkConnection()');
+      const connected = await routerService.checkConnection();
+      console.log('HomeScreen: Connection check result:', connected);
       setIsConnected(connected);
 
       if (connected) {
         // Get basic router information
-        const info = await RouterConnectionService.getRouterInfo();
+        console.log('HomeScreen: Getting router info...');
+        const info = await routerService.getRouterInfo();
+        console.log('HomeScreen: Router info received:', JSON.stringify(info, null, 2));
+        
         setRouterInfo({
           status: info.status || 'Online',
           uptime: info.uptime || 'Unknown',
           connectedDevices: info.connectedDevices || 0,
         });
-        toast.success('Connected to router');
+        
+        console.log('HomeScreen: Updated routerInfo state with connectedDevices:', info.connectedDevices);
+        
+        if (isMockMode) {
+          toast.success('Connected to mock router');
+        } else {
+          toast.success('Connected to router');
+        }
       } else {
+        console.log('HomeScreen: Connection failed, showing alert');
         // Show detailed connection failure alert
         showConnectionFailureAlert();
         toast.error('Failed to connect to router');
       }
     } catch (error) {
-      console.error('Router connection error:', error);
+      console.error('HomeScreen: Router connection error:', error);
       showConnectionFailureAlert();
       setIsConnected(false);
     } finally {
       setIsLoading(false);
+      console.log('HomeScreen: Connection check complete');
     }
   };
 
@@ -178,44 +204,46 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Xfinity Router Manager</Text>
-        <TouchableOpacity 
-          style={styles.refreshButton} 
-          onPress={() => {
-            if (!isConnected) {
-              // Show quick connection help if currently disconnected
-              Alert.alert(
-                'Reconnect to Router',
-                'Attempting to reconnect to the router...',
-                [
-                  {
-                    text: 'Cancel',
-                    style: 'cancel'
-                  },
-                  {
-                    text: 'Connect',
-                    onPress: checkRouterConnection
-                  }
-                ]
-              );
-            } else {
-              checkRouterConnection();
-            }
-          }}
-          disabled={isLoading}
-        >
-          <MaterialIcons name="refresh" size={24} color="white" />
-        </TouchableOpacity>
-      </View>
 
+      
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#0261C2" />
           <Text style={styles.loadingText}>Connecting to router...</Text>
         </View>
       ) : (
-        <>
+        <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+          <View style={styles.header}>
+            <Text style={styles.title}>Xfinity Router Manager</Text>
+            <TouchableOpacity 
+              style={styles.refreshButton} 
+              onPress={() => {
+                if (!isConnected) {
+                  // Show quick connection help if currently disconnected
+                  Alert.alert(
+                    'Reconnect to Router',
+                    'Attempting to reconnect to the router...',
+                    [
+                      {
+                        text: 'Cancel',
+                        style: 'cancel'
+                      },
+                      {
+                        text: 'Connect',
+                        onPress: checkRouterConnection
+                      }
+                    ]
+                  );
+                } else {
+                  checkRouterConnection();
+                }
+              }}
+              disabled={isLoading}
+            >
+              <MaterialIcons name="refresh" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
+
           {/* Environment Alert */}
           <EnvironmentAlert />
           
@@ -235,11 +263,14 @@ export default function HomeScreen() {
                 <Text style={styles.statusText}>Status: {routerInfo.status}</Text>
                 <Text style={styles.statusText}>Uptime: {routerInfo.uptime}</Text>
                 <Text style={styles.statusText}>Connected Devices: {routerInfo.connectedDevices}</Text>
+                <Text style={[styles.statusText, {color: '#FFD700', fontWeight: 'bold'}]}>
+                  MODE: {isMockMode ? 'MOCK' : 'LIVE'}
+                </Text>
               </View>
             )}
           </View>
 
-          <ScrollView style={styles.cardContainer}>
+          <View style={styles.cardContainer}>
             {renderFeatureCard(
               'devices', 
               'Connected Devices', 
@@ -247,12 +278,12 @@ export default function HomeScreen() {
               'Devices'
             )}
             
-            {/* {renderFeatureCard(
+            {renderFeatureCard(
               'block', 
               'Device Control', 
               'Block, unblock, or schedule access for specific devices',
-              'DeviceControl'
-            )} */}
+              'DeviceSelection'
+            )}
 
             {renderFeatureCard(
               'settings', 
@@ -274,8 +305,8 @@ export default function HomeScreen() {
                 Restart your Xfinity router (requires confirmation)
               </Text>
             </TouchableOpacity>
-          </ScrollView>
-        </>
+          </View>
+        </ScrollView>
       )}
     </SafeAreaView>
   );
@@ -285,6 +316,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  scrollContainer: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -340,7 +374,6 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   cardContainer: {
-    flex: 1,
     padding: 8,
   },
   card: {

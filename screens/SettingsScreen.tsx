@@ -7,9 +7,14 @@ import { RouterConnectionService } from '../services/RouterConnectionService';
 import { Config, ConfigUtils } from '../utils/config';
 import { toast } from 'sonner-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMockMode } from '../contexts/MockModeContext';
+import { RestartRouterButton } from '../components/RestartRouterButton';
+import { ServiceFactory } from '../services/ServiceInterfaces';
+import { CustomToggle } from '../components/CustomToggle';
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
+  const { isMockMode, toggleMockMode, isLoading: mockModeLoading } = useMockMode();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -22,7 +27,9 @@ export default function SettingsScreen() {
   // App settings
   const [useDebugMode, setUseDebugMode] = useState(Config.app.debugMode);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(Config.development.enableAdvancedSettings);
-  const [useMockData, setUseMockData] = useState(Config.app.mockDataMode);
+
+  // Create router service based on current mode
+  const routerService = ServiceFactory.createRouterService(isMockMode);
 
   useEffect(() => {
     loadSettings();
@@ -42,11 +49,8 @@ export default function SettingsScreen() {
       const debugMode = await AsyncStorage.getItem('debug_mode');
       setUseDebugMode(debugMode === 'true');
       
-      const showAdvanced = await AsyncStorage.getItem('show_advanced');
-      setShowAdvancedOptions(showAdvanced === 'true');
-      
-      const useMock = await AsyncStorage.getItem('use_mock_data');
-      setUseMockData(useMock === 'true');
+      const advancedMode = await AsyncStorage.getItem('show_advanced');
+      setShowAdvancedOptions(advancedMode === 'true');
     } catch (error) {
       console.error('Error loading settings:', error);
       toast.error('Failed to load settings');
@@ -61,23 +65,25 @@ export default function SettingsScreen() {
       // Validate IP address format
       const ipRegex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
       if (!ipRegex.test(routerIp)) {
-        toast.error('Invalid IP address format');
+        toast.error('Please enter a valid IP address');
         return;
       }
-      
-      // Save router configuration (HTTP only)
-      const routerConfig = {
+
+      // Validate each octet is 0-255
+      const octets = routerIp.split('.').map(Number);
+      if (octets.some(octet => octet < 0 || octet > 255)) {
+        toast.error('IP address octets must be between 0 and 255');
+        return;
+      }
+
+      await RouterConnectionService.saveRouterConfig({
         ip: routerIp,
-        username,
-        password,
-      };
-      
-      await RouterConnectionService.saveRouterConfig(routerConfig);
-      
-      // Save app settings
+        username: username,
+        password: password,
+      });
+
       await AsyncStorage.setItem('debug_mode', useDebugMode.toString());
       await AsyncStorage.setItem('show_advanced', showAdvancedOptions.toString());
-      await AsyncStorage.setItem('use_mock_data', useMockData.toString());
       
       toast.success('Settings saved successfully');
     } catch (error) {
@@ -91,182 +97,33 @@ export default function SettingsScreen() {
   const testConnection = async () => {
     setIsTesting(true);
     try {
-      // First save the current settings
-      const routerConfig = {
-        ip: routerIp,
-        username,
-        password,
-      };
-      
-      await RouterConnectionService.saveRouterConfig(routerConfig);
-      
-      // Now test the connection
-      const isConnected = await RouterConnectionService.checkConnection();
+      const isConnected = await routerService.checkConnection();
       if (isConnected) {
-        const isAuthenticated = await RouterConnectionService.authenticate();
-        if (isAuthenticated) {
-          toast.success('Successfully connected and authenticated!');
-        } else {
-          toast.error('Connected to router but authentication failed');
-        }
+        const info = await routerService.getRouterInfo();
+        Alert.alert(
+          'Connection Successful!',
+          `Connected to router successfully!\n\nStatus: ${info.status}\nConnected Devices: ${info.connectedDevices}\nModel: ${info.model || 'Unknown'}`,
+          [{ text: 'OK' }]
+        );
+        toast.success('Router connection successful');
       } else {
-        toast.error('Failed to connect to router');
+        Alert.alert(
+          'Connection Failed',
+          'Unable to connect to the router. Please check your settings and network connection.',
+          [{ text: 'OK' }]
+        );
+        toast.error('Router connection failed');
       }
     } catch (error) {
       console.error('Connection test error:', error);
-      toast.error('Connection test failed');
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const runDiagnostics = async () => {
-    setIsTesting(true);
-    try {
-      // First save the current settings
-      const routerConfig = {
-        ip: routerIp,
-        username,
-        password,
-      };
-      
-      await RouterConnectionService.saveRouterConfig(routerConfig);
-      
-      // Run network diagnostics
-      const results = await RouterConnectionService.runDiagnostics();
-      
-      // Show detailed results
-      const message = results.tests.map(test => 
-        `${test.name}: ${test.status}${test.details ? '\n  ' + test.details : ''}`
-      ).join('\n\n');
-      
       Alert.alert(
-        'Network Diagnostics Results',
-        `Testing: ${results.baseUrl}\n\n${message}`,
+        'Connection Error',
+        'An error occurred while testing the connection. Please check your settings.',
         [{ text: 'OK' }]
       );
-      
-    } catch (error) {
-      console.error('Diagnostics error:', error);
-      toast.error('Diagnostics failed');
     } finally {
       setIsTesting(false);
     }
-  };
-
-  const forceRealConnection = async () => {
-    setIsTesting(true);
-    try {
-      // Check environment first
-      const advice = RouterConnectionService.getConnectionAdvice();
-      if (!advice.canConnectToRouter) {
-        Alert.alert(
-          'Environment Issue',
-          `${advice.reason}\n\nSolutions:\n${advice.solutions.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
-      // Disable mock mode
-      await RouterConnectionService.disableMockMode();
-      
-      // Clear any existing mock data flag
-      await AsyncStorage.setItem('use_mock_data', 'false');
-      setUseMockData(false);
-      
-      // Try to connect to real router
-      const isConnected = await RouterConnectionService.checkConnection();
-      if (isConnected) {
-        toast.success('Connected to real router!');
-      } else {
-        toast.error('Cannot connect to real router - check network and IP address');
-      }
-    } catch (error) {
-      console.error('Real connection error:', error);
-      toast.error('Real connection failed');
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const resetSettings = () => {
-    Alert.alert(
-      'Reset Settings',
-      'Are you sure you want to reset all settings to default values?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              const defaultConfig = ConfigUtils.getDefaultRouterConfig();
-              await RouterConnectionService.saveRouterConfig({
-                ip: defaultConfig.ip,
-                username: defaultConfig.username,
-                password: '',
-              });
-              
-              await AsyncStorage.removeItem('debug_mode');
-              await AsyncStorage.removeItem('show_advanced');
-              await AsyncStorage.removeItem('use_mock_data');
-              
-              // Reset state
-              setRouterIp(defaultConfig.ip);
-              setUsername(defaultConfig.username);
-              setPassword('');
-              setUseDebugMode(false);
-              setShowAdvancedOptions(false);
-              setUseMockData(false);
-              
-              toast.success('Settings reset to defaults');
-            } catch (error) {
-              console.error('Error resetting settings:', error);
-              toast.error('Failed to reset settings');
-            } finally {
-              setIsLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const clearData = () => {
-    Alert.alert(
-      'Clear Stored Data',
-      'Are you sure you want to clear all stored device names and settings? This cannot be undone.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Clear All Data',
-          style: 'destructive',
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              await AsyncStorage.clear();
-              toast.success('All data cleared successfully');
-              
-              // Reload settings after clearing
-              loadSettings();
-            } catch (error) {
-              console.error('Error clearing data:', error);
-              toast.error('Failed to clear data');
-            } finally {
-              setIsLoading(false);
-            }
-          }
-        }
-      ]
-    );
   };
 
   if (isLoading) {
@@ -304,6 +161,48 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView style={styles.content}>
+        {/* App Settings Card - Mock Mode Toggle */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>App Settings</Text>
+          
+          <CustomToggle
+            value={isMockMode}
+            onValueChange={toggleMockMode}
+            disabled={mockModeLoading}
+            label="Mock Mode"
+            description={isMockMode ? 'Using simulated router data' : 'Using real router connection'}
+          />
+
+          <View style={styles.infoBox}>
+            <MaterialIcons name="info" size={20} color="#0261C2" />
+            <Text style={styles.infoText}>
+              Toggling Mock Mode will reload the app to apply changes. Mock mode uses test data instead of connecting to your real router.
+            </Text>
+          </View>
+          {/* Test Button */}
+          <TouchableOpacity
+            style={[styles.actionButton, styles.testButton]}
+            onPress={() => {
+              console.log('Test button pressed - Current mode:', isMockMode);
+              Alert.alert('Mock Mode Test', `Current mode: ${isMockMode ? 'Mock' : 'Live'}`);
+            }}
+          >
+            <MaterialIcons name="bug-report" size={18} color="white" />
+            <Text style={styles.actionButtonText}>Test Mock Mode Status</Text>
+          </TouchableOpacity>
+          <CustomToggle
+            value={useDebugMode}
+            onValueChange={async (value: boolean = false) => {
+              setUseDebugMode(value);
+              await AsyncStorage.setItem('debug_mode', value.toString());
+              toast.success(`Debug mode ${value ? 'enabled' : 'disabled'}`);
+            }}
+            label="Debug Mode"
+            description="Show additional debug information and logs"
+          />
+        </View>
+
+        {/* Router Configuration Card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Router Configuration (HTTP Only)</Text>
           
@@ -341,28 +240,6 @@ export default function SettingsScreen() {
             />
           </View>
           
-          <View style={styles.infoBox}>
-            <MaterialIcons name="info" size={20} color="#0261C2" />
-            <Text style={styles.infoText}>
-              This app uses HTTP only for better compatibility and to avoid browser security restrictions.
-            </Text>
-          </View>
-
-          {/* Environment-specific connection info */}
-          <View style={styles.infoBox}>
-            <MaterialIcons 
-              name={RouterConnectionService.isHttpsToHttpBlocked() ? "warning" : "check-circle"} 
-              size={20} 
-              color={RouterConnectionService.isHttpsToHttpBlocked() ? "#ff9800" : "#4caf50"} 
-            />
-            <Text style={styles.infoText}>
-              {RouterConnectionService.isHttpsToHttpBlocked() 
-                ? "Browser environment blocks HTTP requests. Use mobile app for real router connection."
-                : "Environment supports router connections."
-              }
-            </Text>
-          </View>
-          
           <TouchableOpacity
             style={[
               styles.actionButton, 
@@ -385,74 +262,6 @@ export default function SettingsScreen() {
           <TouchableOpacity
             style={[
               styles.actionButton, 
-              styles.diagnosticsButton, 
-              isTesting && styles.disabledButton
-            ]}
-            onPress={runDiagnostics}
-            disabled={isTesting}
-          >
-            {isTesting ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <>
-                <MaterialIcons name="bug-report" size={18} color="white" />
-                <Text style={styles.actionButtonText}>Run Diagnostics</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.actionButton, 
-              styles.forceConnectionButton, 
-              isTesting && styles.disabledButton
-            ]}
-            onPress={forceRealConnection}
-            disabled={isTesting}
-          >
-            {isTesting ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <>
-                <MaterialIcons name="router" size={18} color="white" />
-                <Text style={styles.actionButtonText}>Force Real Router</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>App Settings</Text>
-          
-          <View style={styles.switchContainer}>
-            <Text style={styles.label}>Debug Mode</Text>
-            <Switch
-              value={useDebugMode}
-              onValueChange={setUseDebugMode}
-            />
-          </View>
-          
-          <View style={styles.switchContainer}>
-            <Text style={styles.label}>Show Advanced Options</Text>
-            <Switch
-              value={showAdvancedOptions}
-              onValueChange={setShowAdvancedOptions}
-            />
-          </View>
-          
-          <View style={styles.switchContainer}>
-            <Text style={styles.label}>Use Mock Data (Demo Mode)</Text>
-            <Switch
-              value={useMockData}
-              onValueChange={setUseMockData}
-            />
-          </View>
-        </View>
-
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[
-              styles.actionButton, 
               styles.saveButton, 
               isSaving && styles.disabledButton
             ]}
@@ -468,27 +277,21 @@ export default function SettingsScreen() {
               </>
             )}
           </TouchableOpacity>
+        </View>
+
+        {/* Router Actions Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Router Actions</Text>
           
-          <TouchableOpacity
-            style={[styles.actionButton, styles.resetButton]}
-            onPress={resetSettings}
-          >
-            <MaterialIcons name="refresh" size={18} color="white" />
-            <Text style={styles.actionButtonText}>Reset to Defaults</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, styles.dangerButton]}
-            onPress={clearData}
-          >
-            <MaterialIcons name="delete" size={18} color="white" />
-            <Text style={styles.actionButtonText}>Clear All Data</Text>
-          </TouchableOpacity>
+          <RestartRouterButton 
+            routerService={routerService}
+            style={styles.actionButton}
+          />
         </View>
 
         <View style={styles.appInfoCard}>
           <Text style={styles.appName}>{Config.app.name}</Text>
-          <Text style={styles.appVersion}>Version {Config.app.version} - HTTP Mode</Text>
+          <Text style={styles.appVersion}>Version {Config.app.version} - {isMockMode ? 'Mock Mode' : 'Live Mode'}</Text>
           <Text style={styles.appCopyright}>© 2025 All rights reserved</Text>
         </View>
       </ScrollView>
@@ -547,6 +350,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     color: '#0261C2',
   },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  settingInfo: {
+    flex: 1,
+    marginRight: 16,
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  settingDescription: {
+    fontSize: 14,
+    color: '#666',
+  },
   formGroup: {
     marginBottom: 16,
   },
@@ -578,72 +403,53 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0261C2',
   },
-  switchContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  buttonContainer: {
-    marginBottom: 24,
-  },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 14,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  saveButton: {
     backgroundColor: '#0261C2',
-  },
-  resetButton: {
-    backgroundColor: '#FF9800',
-  },
-  testButton: {
-    backgroundColor: '#4CAF50',
-    marginTop: 8,
-  },
-  diagnosticsButton: {
-    backgroundColor: '#9C27B0',
-    marginTop: 8,
-  },
-  forceConnectionButton: {
-    backgroundColor: '#2196F3',
-    marginTop: 8,
-  },
-  dangerButton: {
-    backgroundColor: '#D32F2F',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
   },
   actionButtonText: {
     color: 'white',
     fontWeight: 'bold',
-    fontSize: 16,
     marginLeft: 8,
   },
+  testButton: {
+    backgroundColor: '#4CAF50',
+  },
+  saveButton: {
+    backgroundColor: '#0261C2',
+  },
   disabledButton: {
-    opacity: 0.7,
+    backgroundColor: '#ccc',
   },
   appInfoCard: {
-    backgroundColor: 'transparent',
-    padding: 16,
-    marginBottom: 24,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   appName: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#0261C2',
+    marginBottom: 4,
   },
   appVersion: {
     fontSize: 14,
     color: '#666',
-    marginTop: 4,
+    marginBottom: 8,
   },
   appCopyright: {
     fontSize: 12,
     color: '#999',
-    marginTop: 4,
   },
 });

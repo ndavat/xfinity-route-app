@@ -20,6 +20,14 @@ export interface Device {
   comments?: string;
 }
 
+export interface TrafficData {
+  bytesUp: number;
+  bytesDown: number;
+  packetsUp: number;
+  packetsDown: number;
+  lastUpdated: Date;
+}
+
 export interface BlockSchedule {
   mac: string;
   startTime: string; // Format: "HH:MM"
