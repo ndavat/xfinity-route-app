@@ -312,7 +312,7 @@ export class RouterConnectionService {
       if (useMockData === 'true') {
         console.log('🎭 Mock mode enabled - returning simulated router info');
         return {
-          status: 'Online (Mock Mode)',
+          status: 'Online',
           uptime: '2 days, 14 hours',
           connectedDevices: 8,
           model: 'Xfinity XB7',

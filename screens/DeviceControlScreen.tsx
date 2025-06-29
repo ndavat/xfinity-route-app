@@ -5,13 +5,20 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 import { RouterConnectionService } from '../services/RouterConnectionService';
+import { ServiceFactory } from '../services/ServiceInterfaces';
+import { useMockMode } from '../contexts/MockModeContext';
 import { Device } from '../types/Device';
+import { MockModeIndicator } from '../components/MockModeIndicator';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function DeviceControlScreen() {
   const navigation = useNavigation();
   const route = useRoute();
+  const { isMockMode } = useMockMode();
+  
+  // Create device service based on current mode
+  const deviceService = ServiceFactory.createDeviceService(isMockMode);
   
   useEffect(() => {
     // Check for valid device data immediately
@@ -88,24 +95,23 @@ export default function DeviceControlScreen() {
       let result;
       
       if (!isBlocked) {
-        if (isTemporaryBlock) {
-          // Temporary block
-          const durationMinutes = parseInt(tempBlockDuration, 10);
-          result = await RouterConnectionService.blockDevice(device.mac, durationMinutes);
-          toast.success(`Device blocked for ${tempBlockDuration} minutes`);
-        } else {
-          // Permanent block
-          result = await RouterConnectionService.blockDevice(device.mac);
+        // Block device
+        result = await deviceService.blockDevice(device.mac);
+        if (result) {
           toast.success('Device blocked');
+          setIsBlocked(true);
+        } else {
+          toast.error('Failed to block device');
         }
       } else {
-        // Unblock
-        result = await RouterConnectionService.unblockDevice(device.mac);
-        toast.success('Device unblocked');
-      }
-      
-      if (result) {
-        setIsBlocked(!isBlocked);
+        // Unblock device
+        result = await deviceService.unblockDevice(device.mac);
+        if (result) {
+          toast.success('Device unblocked');
+          setIsBlocked(false);
+        } else {
+          toast.error('Failed to unblock device');
+        }
       }
     } catch (error) {
       console.error('Error toggling block:', error);
@@ -213,6 +219,14 @@ export default function DeviceControlScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Mock Mode Ribbon */}
+      {isMockMode && (
+        <View style={styles.mockModeRibbon}>
+          <Text style={styles.mockModeText}>MODE: MOCK</Text>
+        </View>
+      )}
+
+      
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
@@ -402,6 +416,16 @@ export default function DeviceControlScreen() {
               onChange={onChangeEndTime}
             />
           )}
+        </View>
+
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.trafficButton}
+            onPress={() => (navigation as any).navigate('DeviceTraffic', { device })}
+          >
+            <MaterialIcons name="analytics" size={18} color="white" />
+            <Text style={styles.trafficButtonText}>View Traffic Data</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -661,5 +685,30 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.7,
+  },
+  trafficButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: '#00796b',
+  },
+  trafficButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    marginLeft: 8,
+    fontSize: 16,
+  },
+  mockModeRibbon: {
+    backgroundColor: '#FFD700',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
+  mockModeText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
