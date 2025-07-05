@@ -54,7 +54,10 @@ export default {
       EXPO_PUBLIC_MAX_RETRY_ATTEMPTS: process.env.EXPO_PUBLIC_MAX_RETRY_ATTEMPTS,
       EXPO_PUBLIC_RETRY_DELAY: process.env.EXPO_PUBLIC_RETRY_DELAY,
       EXPO_PUBLIC_ROUTER_CONFIG_KEY: process.env.EXPO_PUBLIC_ROUTER_CONFIG_KEY,
-      EXPO_PUBLIC_DEVICE_NAMES_KEY: process.env.EXPO_PUBLIC_DEVICE_NAMES_KEY
+      EXPO_PUBLIC_DEVICE_NAMES_KEY: process.env.EXPO_PUBLIC_DEVICE_NAMES_KEY,
+      eas: {
+        projectId: "7dada0cb-17bc-4917-ae27-dd8f8edbb1e7"
+      }
     }
   }
 };
