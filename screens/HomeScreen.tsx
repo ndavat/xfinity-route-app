@@ -285,6 +285,34 @@ export default function HomeScreen() {
               'DeviceSelection'
             )}
 
+            {/* {renderFeatureCard(
+              'wifi', 
+              'Wi-Fi Settings', 
+              'Configure Wi-Fi network name, password, and channels',
+              'WifiConfiguration'
+            )} */}
+
+            {/* {renderFeatureCard(
+              'router', 
+              'Network Configuration', 
+              'Manage DHCP, DNS, and bridge mode settings',
+              'NetworkConfiguration'
+            )} */}
+
+            {/* {renderFeatureCard(
+              'security', 
+              'Port Forwarding & Firewall', 
+              'Configure port forwarding rules and firewall settings',
+              'PortForwarding'
+            )} */}
+
+            {/* {renderFeatureCard(
+              'analytics', 
+              'Diagnostics', 
+              'System logs, signal strength, and network tests',
+              'Diagnostics'
+            )} */}
+
             {renderFeatureCard(
               'settings', 
               'Router Settings', 

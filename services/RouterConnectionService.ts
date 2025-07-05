@@ -15,6 +15,13 @@ const DEVICE_NAMES_KEY = Config.storage.deviceNamesKey;
  * Service for interacting with Xfinity router
  */
 export class RouterConnectionService {
+  // Helper method to create timeout signal for fetch requests
+  private static createTimeoutSignal(timeout: number): AbortSignal {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), timeout);
+    return controller.signal;
+  }
+
   // Get router configuration from storage
   static async getRouterConfig() {
     try {
@@ -178,66 +185,45 @@ export class RouterConnectionService {
         username: config.username,
         useMockData: config.useMockData
       });
-      console.log('Attempting to connect to router at:', baseUrl);
       
       // Try to connect to the router's login page
-      const response = await axios.get(baseUrl, {
-        timeout: Config.api.timeout,
-        validateStatus: (status) => true,
+      const loginResponse = await fetch(`${baseUrl}${Config.router.loginEndpoint}`, {
+        signal: this.createTimeoutSignal(Config.api.timeout),
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Cache-Control': 'no-cache',
-        },
-        withCredentials: false
+          'Authorization': `Basic ${btoa(`${config.username}:${config.password}`)}`
+        }
       });
       
-      console.log('Router response details:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
+      console.log('Router login response details:', {
+        status: loginResponse.status,
+        statusText: loginResponse.statusText,
+        headers: loginResponse.headers,
       });
-      
-      // If we get a response, consider it connected
-      const isConnected = response.status < 400 || response.status === 401;
-      console.log('Router connection status:', isConnected ? '✅ Connected' : '❌ Disconnected');
-      
-      if (!isConnected) {
-        console.error('Connection failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          url: baseUrl
-        });
+  
+      if (!loginResponse.ok) {
+        console.log('Login failed:', loginResponse.status, loginResponse.statusText);
         return false;
       }
-      
-      return true;
-    } catch (error: any) {
-      // Enhanced error logging
-      console.error('=== ROUTER CONNECTION ERROR ===');
-      if (axios.isAxiosError(error)) {
-        console.error('Network Error Details:', {
-          message: error.message,
-          code: error.code,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          url: error.config?.url,
-          timeout: error.config?.timeout
-        });
-        
-        if (error.code === 'ECONNREFUSED') {
-          console.error('❌ Connection refused - Router might be off or wrong IP address');
-        } else if (error.code === 'ENOTFOUND') {
-          console.error('❌ Host not found - Check IP address');
-        } else if (error.code === 'ETIMEDOUT') {
-          console.error('❌ Connection timeout - Router might be slow or unreachable');
-        } else if (error.code === 'ENETUNREACH') {
-          console.error('❌ Network unreachable - Check your network connection');
-        } else if (error.message.includes('CORS')) {
-          console.error('❌ CORS error - Try using mobile app instead of web browser');
+  
+      // Check connection status
+      const statusResponse = await fetch(`${baseUrl}${Config.router.connectionStatusEndpoint}`, {
+        signal: this.createTimeoutSignal(Config.api.timeout),
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Authorization': `Basic ${btoa(`${config.username}:${config.password}`)}`
         }
-      } else {
-        console.error('Unexpected error:', error);
-      }
+      });
+  
+      console.log('Connection status response:', {
+        status: statusResponse.status,
+        statusText: statusResponse.statusText
+      });
+  
+      return statusResponse.ok;
+    } catch (error) {
+      console.error('Router connection error:', error);
       return false;
     }
   }
@@ -699,11 +685,26 @@ export class RouterConnectionService {
           message: error.message,
           code: error.code,
           status: error.response?.status,
-          url: error.config?.url
+          statusText: error.response?.statusText,
+          url: error.config?.url,
+          timeout: error.config?.timeout
         });
+        
+        if (error.code === 'ECONNREFUSED') {
+          console.error('❌ Connection refused - Router might be off or wrong IP address');
+        } else if (error.code === 'ENOTFOUND') {
+          console.error('❌ Host not found - Check IP address');
+        } else if (error.code === 'ETIMEDOUT') {
+          console.error('❌ Connection timeout - Router might be slow or unreachable');
+        } else if (error.code === 'ENETUNREACH') {
+          console.error('❌ Network unreachable - Check your network connection');
+        } else if (error.message.includes('CORS')) {
+          console.error('❌ CORS error - Try using mobile app instead of web browser');
+        }
+      } else {
+        console.error('Unexpected error:', error);
       }
-      // For demo/testing purposes, return true to simulate successful blocking
-      return true;
+      return false;
     }
   }
 

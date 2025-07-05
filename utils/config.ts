@@ -34,9 +34,16 @@ export const Config = {
     defaultIp: getEnvVar('EXPO_PUBLIC_DEFAULT_ROUTER_IP', '10.0.0.1'),
     defaultUsername: getEnvVar('EXPO_PUBLIC_DEFAULT_USERNAME', 'admin'),
     defaultPassword: getEnvVar('EXPO_PUBLIC_DEFAULT_PASSWORD', 'password1'),
-    deviceEndpoint: getEnvVar('EXPO_PUBLIC_DEVICE_ENDPOINT', '/connected_devices_computers.php'),
+    deviceEndpoint: getEnvVar('EXPO_PUBLIC_CONNECTED_DEVICE_ENDPOINT', '/connected_devices_computers.php'),
+    loginEndpoint: getEnvVar('EXPO_PUBLIC_ROUTER_LOGIN_ENDPOINT', '/index.php'),
+    atAGlanceEndpoint: getEnvVar('EXPO_PUBLIC_ROUTER_ATAGLANCE_ENDPOINT', '/at_a_glance.php'),
+    managedDevicesEndpoint: getEnvVar('EXPO_PUBLIC_ROUTER_MANAGED_DEVICES_ENDPOINT', '/managed_devices.php'),
+    connectionStatusEndpoint: getEnvVar('EXPO_PUBLIC_ROUTER_CONNECTION_STATUS_ENDPOINT', '/connection_status.php'),
     restoreRebootEndpoint: getEnvVar('EXP_PUBLIC_RESTORE_REBOOT', '/restore_reboot.php'),
-    enableHttps: getEnvBoolean('EXPO_PUBLIC_ROUTER_ENABLE_HTTPS', false)
+    enableHttps: getEnvBoolean('EXPO_PUBLIC_ROUTER_ENABLE_HTTPS', false),
+    firmwareVersion: getEnvVar('EXPO_PUBLIC_ROUTER_FIRMWARE_VERSION', '2.0.1.7'),
+    model: getEnvVar('EXPO_PUBLIC_ROUTER_MODEL', 'Xfinity Wi-Fi'),
+    defaultSSID: getEnvVar('EXPO_PUBLIC_ROUTER_DEFAULT_SSID', 'HOME-WIFI')
   },
 
   // API Configuration
@@ -54,7 +61,8 @@ export const Config = {
     debugMode: getEnvBoolean('EXPO_PUBLIC_DEBUG_MODE', false),
     // Force mock mode to always be false
     mockDataMode: false,
-    forceRealMode: getEnvBoolean('EXPO_PUBLIC_FORCE_REAL_MODE', true)
+    forceRealMode: getEnvBoolean('EXPO_PUBLIC_FORCE_REAL_MODE', true),
+    saveCredentials: getEnvBoolean('EXPO_PUBLIC_SAVE_CREDENTIALS', false)
   },
 
   // Development Settings

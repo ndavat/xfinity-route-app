@@ -11,6 +11,10 @@ import DeviceSelectionScreen from "./screens/DeviceSelectionScreen"
 import DeviceControlScreen from "./screens/DeviceControlScreen"
 import DeviceTrafficScreen from "./screens/DeviceTrafficScreen"
 import SettingsScreen from "./screens/SettingsScreen"
+import WifiConfigurationScreen from "./screens/wifi/WifiConfigurationScreen"
+import NetworkConfigurationScreen from "./screens/network/NetworkConfigurationScreen"
+import PortForwardingScreen from "./screens/firewall/PortForwardingScreen"
+import DiagnosticsScreen from "./screens/diagnostics/DiagnosticsScreen"
 
 const Stack = createNativeStackNavigator();
 
@@ -25,6 +29,10 @@ function RootStack() {
       <Stack.Screen name="DeviceControl" component={DeviceControlScreen} />
       <Stack.Screen name="DeviceTraffic" component={DeviceTrafficScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="WifiConfiguration" component={WifiConfigurationScreen} />
+      <Stack.Screen name="NetworkConfiguration" component={NetworkConfigurationScreen} />
+      <Stack.Screen name="PortForwarding" component={PortForwardingScreen} />
+      <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
     </Stack.Navigator>
   );
 }

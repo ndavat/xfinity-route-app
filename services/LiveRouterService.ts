@@ -1,5 +1,8 @@
 import { RouterService, RestartResult, RouterInfo } from './ServiceInterfaces';
 import { Config } from '../utils/config';
+import axios from 'axios';
+import { parse } from 'node-html-parser';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export class LiveRouterService implements RouterService {
   private baseUrl: string;
@@ -14,17 +17,33 @@ export class LiveRouterService implements RouterService {
     this.username = Config.router.defaultUsername;
     
     if (Config.app.debugMode) {
-      console.log('LiveRouterService initialized', {
+      console.log('[LiveRouterService] Initialized with config:', {
         baseUrl: this.baseUrl,
         timeout: this.timeout,
-        retryAttempts: this.retryAttempts
+        retryAttempts: this.retryAttempts,
+        username: this.username,
+        password: Config.router.defaultPassword,
+        deviceEndpoint: Config.router.deviceEndpoint,
+        loginEndpoint: Config.router.loginEndpoint,
+        connectionStatusEndpoint: Config.router.connectionStatusEndpoint
       });
     }
   }
 
+  private createTimeoutSignal(): AbortSignal {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), this.timeout);
+    return controller.signal;
+  }
+
   async restartRouter(): Promise<RestartResult> {
     if (Config.app.debugMode) {
-      console.log('Attempting router restart...');
+      console.log('[LiveRouterService] Initiating router restart:', {
+        endpoint: `${this.baseUrl}/api/router/restart`,
+        username: this.username,
+        timeout: this.timeout,
+        maxAttempts: this.retryAttempts
+      });
     }
     
     for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
@@ -35,12 +54,16 @@ export class LiveRouterService implements RouterService {
             'Content-Type': 'application/json',
             'Authorization': `Basic ${btoa(`${this.username}:${Config.router.defaultPassword}`)}`
           },
-          signal: AbortSignal.timeout(this.timeout),
+          signal: this.createTimeoutSignal()
         });
         
         if (response.ok) {
           if (Config.app.debugMode) {
-            console.log('Router restart successful');
+            console.log('[LiveRouterService] Router restart successful:', {
+              attempt,
+              status: response.status,
+              headers: Object.fromEntries(response.headers.entries())
+            });
           }
           return {
             success: true,
@@ -52,7 +75,12 @@ export class LiveRouterService implements RouterService {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       } catch (error: any) {
         if (Config.app.debugMode) {
-          console.log(`Router restart attempt ${attempt} failed:`, error);
+          console.log('[LiveRouterService] Router restart attempt failed:', {
+            attempt,
+            error: error.message,
+            stack: error.stack,
+            remainingAttempts: this.retryAttempts - attempt
+          });
         }
         
         if (attempt === this.retryAttempts) {
@@ -79,57 +107,254 @@ export class LiveRouterService implements RouterService {
 
   async checkConnection(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/`, {
+      // First try the login endpoint
+      const loginResponse = await fetch(`${this.baseUrl}${Config.router.loginEndpoint}`, {
         method: 'GET',
-        signal: AbortSignal.timeout(this.timeout),
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Cache-Control': 'no-cache',
+          'Authorization': `Basic ${btoa(`${this.username}:${Config.router.defaultPassword}`)}`,
+        },
+        signal: this.createTimeoutSignal()
       });
       
       if (Config.app.debugMode) {
-        console.log('Router connection check:', response.status);
+        console.log('[LiveRouterService] Login check:', {
+          endpoint: `${this.baseUrl}${Config.router.loginEndpoint}`,
+          status: loginResponse.status,
+          ok: loginResponse.ok,
+          statusText: loginResponse.statusText,
+          headers: Object.fromEntries(loginResponse.headers.entries())
+        });
+      }
+  
+      if (!loginResponse.ok) {
+        return false;
+      }
+  
+      // If login successful, check connection status
+      const statusResponse = await fetch(`${this.baseUrl}${Config.router.connectionStatusEndpoint}`, {
+        headers: {
+          'Authorization': `Basic ${btoa(`${this.username}:${Config.router.defaultPassword}`)}`,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: this.createTimeoutSignal()
+      });
+  
+      if (Config.app.debugMode) {
+        console.log('[LiveRouterService] Connection status check:', {
+          endpoint: `${this.baseUrl}${Config.router.connectionStatusEndpoint}`,
+          status: statusResponse.status,
+          ok: statusResponse.ok,
+          statusText: statusResponse.statusText,
+          headers: Object.fromEntries(statusResponse.headers.entries())
+        });
       }
       
-      return response.ok;
+      return statusResponse.ok;
     } catch (error: any) {
       if (Config.app.debugMode) {
-        console.log('Router connection failed:', error.message);
+        const isTimeout = error.name === 'AbortError';
+        console.log('Router connection failed:', {
+          error: error.message,
+          type: error.name,
+          isTimeout,
+          timeout: this.timeout,
+          endpoint: `${this.baseUrl}${Config.router.loginEndpoint}`
+        });
       }
       return false;
     }
   }
+// Authenticate with the router
+   async authenticate(force: boolean = false): Promise<boolean> {
+    try {
+      // If we have a session and aren't forcing re-auth, verify the session first
+      if (!force && await this.verifySession()) {
+        return true;
+      }
 
+      const config = await this.getRouterConfig();
+      const baseUrl = `http://${config.ip}`;
+
+      console.log('Authenticating with router...');
+      
+      const response = await axios.post(
+        `${baseUrl}/check.php`,
+        `username=${config.username}&password=${config.password}`,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          withCredentials: true,
+        }
+      );
+
+      // Check if authentication was successful
+      const isAuthenticated = 
+        response.data.includes('success') || 
+        response.data.includes('Authentication successful') ||
+        response.status === 200;
+
+      if (!isAuthenticated) {
+        console.error('Authentication failed:', response.data);
+        throw new Error('Authentication failed');
+      }
+
+      console.log('Authentication successful');
+      return true;
+    } catch (error) {
+      console.error('Authentication error:', error);
+      return false;
+    }
+  }
+  async getRouterConfig() {
+    try {
+      const storedConfig = await AsyncStorage.getItem(Config.storage.routerConfigKey);
+      // Use stored config if it exists, otherwise use default
+      const config = storedConfig ? JSON.parse(storedConfig) : {
+        ip: '10.0.0.1',
+        username: Config.router.defaultUsername,
+        password: Config.router.defaultPassword,
+      };
+      
+      // Always ensure mock mode is disabled
+      config.useMockData = false;
+      return config;
+    } catch (error) {
+      console.error('Error getting router config:', error);
+      // Fallback to default configuration
+      return {
+        ip: '10.0.0.1',
+        username: Config.router.defaultUsername,
+        password: Config.router.defaultPassword,
+        useMockData: false
+      };
+    }
+  }
+   async verifySession(): Promise<boolean> {
+    try {
+      const config = await this.getRouterConfig();
+      const baseUrl = `http://${config.ip}`;
+
+      // Try to access a protected endpoint
+      const response = await axios.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
+        withCredentials: true,
+      });
+
+      // If we don't get a login redirect, session is valid
+      return !response.data.includes('Please Login First!');
+    } catch (error) {
+      console.error('Session verification error:', error);
+      return false;
+    }
+  }
   async getRouterInfo(): Promise<RouterInfo> {
     try {
-      // This is a simplified version - real implementation would parse router's web interface
-      const response = await fetch(`${this.baseUrl}/status`, {
-        headers: {
-          'Authorization': `Basic ${btoa(`${this.username}:${Config.router.defaultPassword}`)}`
-        },
-        signal: AbortSignal.timeout(this.timeout),
+      // First ensure we're authenticated
+      const isAuthenticated = await this.authenticate();
+      if (!isAuthenticated) {
+        throw new Error('Authentication failed');
+      }
+      
+      const config = await this.getRouterConfig();
+      const baseUrl = `http://${config.ip}`;
+      
+      // Request router status page
+      const response = await axios.get(`${baseUrl}/status`, {
+        withCredentials: true,
       });
       
-      if (response.ok) {
-        // In a real implementation, you'd parse the HTML/JSON response
-        return {
-          status: 'Online',
-          uptime: '3 days, 5 hours',
-          connectedDevices: 12,
-          model: 'Xfinity Gateway',
-          firmware: '2.0.1.7',
-          wifiSSID: 'HOME-WIFI'
-        };
+      // This is a placeholder for parsing router-specific HTML/JSON
+      // Actual implementation depends on your specific router's web interface
+      // Use parse() for HTML content parsing
+      // Navigate to network_setup.php to get Internet status and System Uptime
+      const networkSetupResponse = await axios.get(`${baseUrl}/network_setup.php`, {
+        withCredentials: true,
+      });
+      
+      // Parse the HTML response
+      const networkSetupRoot = parse(networkSetupResponse.data);
+      
+      // Extract Internet status
+      let internetStatus = 'Unknown';
+      const internetStatusElement = networkSetupRoot.querySelector('div.form-row span.readonlyLabel:contains("Internet:")');
+      if (internetStatusElement) {
+        const valueElement = internetStatusElement.parentNode.querySelector('span.value');
+        if (valueElement) {
+          internetStatus = valueElement.text.trim();
+        }
       }
       
-      throw new Error('Failed to get router info');
+      // Extract System Uptime
+      let systemUptime = 'Unknown';
+      const uptimeElement = networkSetupRoot.querySelector('div.form-row span.readonlyLabel:contains("System Uptime:")');
+      if (uptimeElement) {
+        const valueElement = uptimeElement.parentNode.querySelector('span.value');
+        if (valueElement) {
+          systemUptime = valueElement.text.trim();
+        }
+      }
+      
+      // Get connected devices count
+      let connectedDevices = 0;
+      try {
+        const connectionStatusResponse = await fetch(`${this.baseUrl}/connection_status.php`, {
+          headers: {
+            'Authorization': `Basic ${btoa(`${this.username}:${Config.router.defaultPassword}`)}`,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+          signal: this.createTimeoutSignal()
+        });
+        console.log('Connection status response:', connectionStatusResponse);
+        if (connectionStatusResponse.ok) {
+          const connectionStatusText = await connectionStatusResponse.text();
+          const connectionStatusRoot = parse(connectionStatusText);
+          
+          // Find the element containing "No of Clients connected:" label
+          const clientsElement = connectionStatusRoot.querySelector('div.form-row span.readonlyLabel:contains("No of Clients connected:")');
+          if (clientsElement) {
+            const valueElement = clientsElement.parentNode.querySelector('span.value');
+            if (valueElement) {
+              const clientsText = valueElement.text.trim();
+              connectedDevices = parseInt(clientsText, 10) || 0;
+              if (Config.app.debugMode) {
+                console.log(`Found ${connectedDevices} connected clients`);
+              }
+            }
+          } else if (Config.app.debugMode) {
+            console.log('Could not find "No of Clients connected:" element');
+          }
+        }
+      } catch (connectionError: any) {
+        if (Config.app.debugMode) {
+          console.error('Error fetching connection status:', connectionError);
+        }
+      }
+      
+      // Use default values for model and firmware since they're router-specific
+      const model = Config.router.model || 'Xfinity Gateway';
+      const firmware = Config.router.firmwareVersion || '2.0.1.7';
+      const wifiSSID = Config.router.defaultSSID || 'HOME-WIFI';
+  
+      return {
+        status: internetStatus,
+        uptime: systemUptime,
+        connectedDevices,
+        model,
+        firmware,
+        wifiSSID
+      };
     } catch (error: any) {
       if (Config.app.debugMode) {
-        console.log('Failed to get router info:', error.message);
+        console.error('Failed to get router info:', error.message);
       }
       
-      // Return basic info even if detailed info fails
       return {
-        status: 'Connected',
+        status: 'Unknown',
         uptime: 'Unknown',
         connectedDevices: 0,
+        model: Config.router.model || 'Unknown',
+        firmware: Config.router.firmwareVersion || 'Unknown',
+        wifiSSID: Config.router.defaultSSID || 'Unknown'
       };
     }
   }

@@ -6,8 +6,9 @@ interface CustomToggleProps {
   value: boolean;
   onValueChange: (value?: boolean) => void | Promise<void>;
   disabled?: boolean;
-  label: string;
-  description: string;
+  label?: string;
+  description?: string;
+  small?: boolean;
 }
 
 export const CustomToggle: React.FC<CustomToggleProps> = ({
@@ -15,8 +16,27 @@ export const CustomToggle: React.FC<CustomToggleProps> = ({
   onValueChange,
   disabled = false,
   label,
-  description
+  description,
+  small = false
 }) => {
+  if (small) {
+    return (
+      <TouchableOpacity
+        style={[styles.smallToggle, value ? styles.toggleOn : styles.toggleOff]}
+        onPress={() => !disabled && onValueChange(!value)}
+        disabled={disabled}
+      >
+        <View style={[styles.smallThumb, value ? styles.thumbOn : styles.thumbOff]}>
+          <MaterialIcons 
+            name={value ? "check" : "close"} 
+            size={12} 
+            color="white" 
+          />
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
   return (
     <TouchableOpacity
       style={[styles.toggleContainer, disabled && styles.disabled]}
@@ -24,8 +44,8 @@ export const CustomToggle: React.FC<CustomToggleProps> = ({
       disabled={disabled}
     >
       <View style={styles.textContainer}>
-        <Text style={styles.label}>{label}</Text>
-        <Text style={styles.description}>{description}</Text>
+        {label && <Text style={styles.label}>{label}</Text>}
+        {description && <Text style={styles.description}>{description}</Text>}
       </View>
       
       <View style={[styles.toggle, value ? styles.toggleOn : styles.toggleOff]}>
@@ -74,6 +94,13 @@ const styles = StyleSheet.create({
     padding: 2,
     justifyContent: 'center',
   },
+  smallToggle: {
+    width: 40,
+    height: 20,
+    borderRadius: 10,
+    padding: 2,
+    justifyContent: 'center',
+  },
   toggleOn: {
     backgroundColor: '#0261C2',
     alignItems: 'flex-end',
@@ -86,6 +113,13 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  smallThumb: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
