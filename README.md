@@ -100,6 +100,29 @@ A React Native Expo application for managing and monitoring Xfinity routers. Thi
 - **Slider**: 4.5.6
 - **Picker**: 2.11.0
 
+## 🔐 Permissions
+
+This app requires specific network permissions to function properly:
+
+### Android Permissions
+- **INTERNET**: Required for HTTP/HTTPS communication with your Xfinity router
+- **ACCESS_NETWORK_STATE**: Needed to detect network connectivity and validate connection status
+- **ACCESS_WIFI_STATE**: Used to gather information about your Wi-Fi network and router
+
+### iOS Permissions
+- **NSLocalNetworkUsageDescription**: Required for iOS 14+ to access devices on your local network (your router)
+- **NSBonjourServices**: Enables discovery of network services including HTTP/HTTPS services on your router
+- **NSAppTransportSecurity**: Configured to allow secure connections to local network devices while maintaining security standards
+
+### Why These Permissions Are Needed
+The Xfinity Router App connects directly to your router's web interface to:
+- Monitor connected devices in real-time
+- Control device access (block/unblock functionality)
+- Retrieve router status and configuration
+- Manage network settings and device names
+
+All network communication stays within your local network - no external servers are used for router management.
+
 ## 📋 Prerequisites
 
 Before installing the app, make sure you have:

@@ -54,13 +54,17 @@
     "react-native-svg": "15.11.2",
     "react-native-web": "^0.20.0",
     "sonner-native": "0.20.0",
+    "tough-cookie": "^5.1.2",
     "zustand": "^5.0.6"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.0.10",
     "expo-doctor": "^1.13.3",
+    "jest": "^30.0.4",
     "sharp": "^0.34.2",
+    "ts-jest": "^29.4.0",
     "typescript": "^5.6.0"
   }
 }

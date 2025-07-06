@@ -1,11 +1,15 @@
 import { Device } from '../types/Device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { parse } from 'node-html-parser';
+import { Config } from '../utils/config';
 import { axiosInstance } from '../utils/axiosConfig';
-import { Config, ConfigUtils } from '../utils/config';
+import { parse } from 'node-html-parser';
+import NetInfo from '@react-native-community/netinfo';
+import { authService } from './core/AuthenticationService';
+import { refreshNetworkState, getCurrentNetworkState, getWifiDetails } from './debug/NetworkMonitor';
+import { GatewayDiscovery } from '../utils/GatewayDiscovery';
 
 // Default router credentials (loaded from environment variables)
-const DEFAULT_ROUTER_CONFIG = ConfigUtils.getDefaultRouterConfig();
+const DEFAULT_ROUTER_CONFIG = Config.router;
 
 // Storage keys (from environment variables)
 const ROUTER_CONFIG_KEY = Config.storage.routerConfigKey;
@@ -22,16 +26,59 @@ export class RouterConnectionService {
     return controller.signal;
   }
 
+  /**
+   * Check network connectivity and refresh network state
+   * Returns false if network is not connected
+   */
+  private static async checkNetworkConnectivity(): Promise<boolean> {
+    try {
+      // Refresh network state
+      await refreshNetworkState();
+      
+      // Get current network state
+      const networkState = getCurrentNetworkState();
+      const wifiDetails = getWifiDetails();
+      
+      if (!networkState?.isConnected) {
+        console.log('[RouterConnectionService] Network not connected - aborting request');
+        return false;
+      }
+      
+      // Log detailed network information
+      const routerIp = await GatewayDiscovery.getRouterIp();
+      console.log('[RouterConnectionService] Network connectivity check:', {
+        isConnected: networkState.isConnected,
+        networkType: networkState.type,
+        ssid: wifiDetails?.ssid || 'N/A',
+        gateway: `http://${routerIp}`,
+        ipAddress: wifiDetails?.ipAddress || 'N/A',
+        signalStrength: wifiDetails?.strength || 'N/A',
+        timestamp: new Date().toISOString()
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('[RouterConnectionService] Network connectivity check failed:', error);
+      return false;
+    }
+  }
+
   // Get router configuration from storage
   static async getRouterConfig() {
     try {
+      // Get dynamic router IP using GatewayDiscovery
+      const routerIp = await GatewayDiscovery.getRouterIp();
+      
       const storedConfig = await AsyncStorage.getItem(ROUTER_CONFIG_KEY);
       // Use stored config if it exists, otherwise use default
       const config = storedConfig ? JSON.parse(storedConfig) : {
-        ip: '10.0.0.1',
+        ip: routerIp, // Use dynamically discovered IP
         username: Config.router.defaultUsername,
         password: Config.router.defaultPassword,
       };
+      
+      // Always update IP with the latest discovered value
+      config.ip = routerIp;
       
       // Always ensure mock mode is disabled
       config.useMockData = false;
@@ -173,6 +220,12 @@ export class RouterConnectionService {
   // Check connection to router
   static async checkConnection() {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        return false;
+      }
+      
       // Ensure we're in real mode
       await AsyncStorage.setItem('use_mock_data', 'false');
       
@@ -228,41 +281,38 @@ export class RouterConnectionService {
     }
   }
 
-  // Authenticate with the router
+  // Authenticate with the router using enhanced AuthenticationService
   static async authenticate(force: boolean = false): Promise<boolean> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        console.log('Network not connected, cannot authenticate');
+        return false;
+      }
+      
       // If we have a session and aren't forcing re-auth, verify the session first
-      if (!force && await this.verifySession()) {
-        return true;
+      if (!force) {
+        const isValid = await authService.verifySession();
+        if (isValid) {
+          console.log('Existing session is valid');
+          return true;
+        }
       }
 
       const config = await this.getRouterConfig();
-      const baseUrl = `http://${config.ip}`;
-
-      console.log('Authenticating with router...');
+      console.log('Authenticating with router using enhanced AuthenticationService...');
       
-      const response = await axiosInstance.post(
-        `${baseUrl}/check.php`,
-        `username=${config.username}&password=${config.password}`,
-        {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          withCredentials: true,
-        }
-      );
-
-      // Check if authentication was successful
-      const isAuthenticated = 
-        response.data.includes('success') || 
-        response.data.includes('Authentication successful') ||
-        response.status === 200;
-
-      if (!isAuthenticated) {
-        console.error('Authentication failed:', response.data);
-        throw new Error('Authentication failed');
+      // Use the enhanced authentication service
+      const result = await authService.login(config.username, config.password);
+      
+      if (result.success) {
+        console.log('Authentication successful via AuthenticationService');
+        return true;
+      } else {
+        console.error('Authentication failed via AuthenticationService:', result.error);
+        return false;
       }
-
-      console.log('Authentication successful');
-      return true;
     } catch (error) {
       console.error('Authentication error:', error);
       return false;
@@ -270,20 +320,21 @@ export class RouterConnectionService {
   }
 
   /**
-   * Verify if the current session is still valid
+   * Verify if the current session is still valid using enhanced AuthenticationService
    */
   static async verifySession(): Promise<boolean> {
     try {
-      const config = await this.getRouterConfig();
-      const baseUrl = `http://${config.ip}`;
-
-      // Try to access a protected endpoint
-      const response = await axiosInstance.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
-        withCredentials: true,
-      });
-
-      // If we don't get a login redirect, session is valid
-      return !response.data.includes('Please Login First!');
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        console.log('Network not connected, cannot verify session');
+        return false;
+      }
+      
+      // Use the enhanced authentication service for session verification
+      const isValid = await authService.verifySession();
+      console.log(`Session verification result: ${isValid}`);
+      return isValid;
     } catch (error) {
       console.error('Session verification error:', error);
       return false;
@@ -307,7 +358,13 @@ export class RouterConnectionService {
         };
       }
 
-      // First ensure we're authenticated
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        throw new Error('Network not connected');
+      }
+
+      // First ensure we're authenticated using enhanced AuthenticationService
       const isAuthenticated = await this.authenticate();
       if (!isAuthenticated) {
         throw new Error('Authentication failed');
@@ -400,6 +457,12 @@ export class RouterConnectionService {
   // Get list of connected devices
   static async getConnectedDevices(): Promise<Device[]> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        throw new Error('Network not connected');
+      }
+      
       const config = await this.getRouterConfig();
       const baseUrl = `http://${config.ip}`;
       
@@ -412,8 +475,8 @@ export class RouterConnectionService {
 
       // Check for login redirect script
       if (response.data.includes('Please Login First!')) {
-        console.log('Detected login redirect, attempting re-authentication...');
-        const isAuthenticated = await this.authenticate();
+        console.log('Detected login redirect, attempting re-authentication via AuthenticationService...');
+        const isAuthenticated = await this.authenticate(true); // Force re-authentication
         if (!isAuthenticated) {
           throw new Error('Re-authentication failed');
         }
@@ -593,20 +656,23 @@ export class RouterConnectionService {
   // Store custom device names
   static async storeDeviceName(mac: string, name: string): Promise<boolean> {
     try {
-      // Try to update on router first if authenticated
-      const isAuthenticated = await this.authenticate();
-      if (isAuthenticated) {
-        const config = await this.getRouterConfig();
-        const baseUrl = `http://${config.ip}`;
-        
-        try {
-          const response = await axiosInstance.put(`${baseUrl}/network/devices/${mac}/name`, 
-            { customName: name },
-            { 
-              withCredentials: true,
-              timeout: Config.api.timeout,
-              validateStatus: (status) => status < 500
-            }
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (isConnected) {
+        // Try to update on router first if authenticated
+        const isAuthenticated = await this.authenticate();
+        if (isAuthenticated) {
+          const config = await this.getRouterConfig();
+          const baseUrl = `http://${config.ip}`;
+          
+          try {
+            const response = await axiosInstance.put(`${baseUrl}/network/devices/${mac}/name`, 
+              { customName: name },
+              { 
+                withCredentials: true,
+                timeout: Config.api.timeout,
+                validateStatus: (status) => status < 500
+              }
           );
           
           if (response.status >= 200 && response.status < 300) {
@@ -614,8 +680,9 @@ export class RouterConnectionService {
           } else {
             console.warn('Router returned non-success status:', response.status);
           }
-        } catch (routerError) {
-          console.warn('Failed to update name on router, storing locally only:', routerError);
+          } catch (routerError) {
+            console.warn('Failed to update name on router, storing locally only:', routerError);
+          }
         }
       }
       
@@ -644,6 +711,12 @@ export class RouterConnectionService {
   // Block a device
   static async blockDevice(mac: string, durationMinutes?: number): Promise<boolean> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        throw new Error('Network not connected');
+      }
+      
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
       if (!isAuthenticated) {
@@ -711,6 +784,12 @@ export class RouterConnectionService {
   // Unblock a device
   static async unblockDevice(mac: string): Promise<boolean> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        throw new Error('Network not connected');
+      }
+      
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
       if (!isAuthenticated) {
@@ -758,6 +837,12 @@ export class RouterConnectionService {
   // Set up scheduled blocking for a device
   static async scheduleDeviceBlock(mac: string, startTime: string, endTime: string, days: string[]): Promise<boolean> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        throw new Error('Network not connected');
+      }
+      
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
       if (!isAuthenticated) {
@@ -809,6 +894,12 @@ export class RouterConnectionService {
   // Restart the router
   static async restartRouter(): Promise<boolean> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        throw new Error('Network not connected');
+      }
+      
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
       if (!isAuthenticated) {

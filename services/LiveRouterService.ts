@@ -3,6 +3,8 @@ import { Config } from '../utils/config';
 import { axiosInstance } from '../utils/axiosConfig';
 import { parse } from 'node-html-parser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GatewayDiscovery } from '../utils/GatewayDiscovery';
+import { refreshNetworkState, getCurrentNetworkState, getWifiDetails } from './debug/NetworkMonitor';
 
 export class LiveRouterService implements RouterService {
   private baseUrl: string;
@@ -11,7 +13,8 @@ export class LiveRouterService implements RouterService {
   private username: string;
 
   constructor() {
-    this.baseUrl = `http://${Config.router.defaultIp}`;
+    // Note: baseUrl will be set dynamically in initializeBaseUrl()
+    this.baseUrl = `http://${Config.router.defaultIp}`; // fallback for synchronous access
     this.timeout = Config.api.timeout;
     this.retryAttempts = Config.api.maxRetryAttempts;
     this.username = Config.router.defaultUsername;
@@ -36,7 +39,75 @@ export class LiveRouterService implements RouterService {
     return controller.signal;
   }
 
+  /**
+   * Initialize base URL with dynamic gateway discovery
+   */
+  private async initializeBaseUrl(): Promise<void> {
+    try {
+      const routerIp = await GatewayDiscovery.getRouterIp();
+      this.baseUrl = `http://${routerIp}`;
+      
+      if (Config.app.debugMode) {
+        console.log('[LiveRouterService] Gateway discovery completed:', {
+          detectedIp: routerIp,
+          baseUrl: this.baseUrl
+        });
+      }
+    } catch (error) {
+      console.error('[LiveRouterService] Gateway discovery failed, using fallback:', error);
+      this.baseUrl = `http://${Config.router.defaultIp}`;
+    }
+  }
+
+  /**
+   * Check network connectivity and refresh network state
+   * Returns false if network is not connected
+   */
+  private async checkNetworkConnectivity(): Promise<boolean> {
+    try {
+      // Refresh network state
+      await refreshNetworkState();
+      
+      // Get current network state
+      const networkState = getCurrentNetworkState();
+      const wifiDetails = getWifiDetails();
+      
+      if (!networkState?.isConnected) {
+        console.log('[LiveRouterService] Network not connected - aborting request');
+        return false;
+      }
+      
+      // Log detailed network information
+      console.log('[LiveRouterService] Network connectivity check:', {
+        isConnected: networkState.isConnected,
+        networkType: networkState.type,
+        ssid: wifiDetails?.ssid || 'N/A',
+        gateway: this.baseUrl,
+        ipAddress: wifiDetails?.ipAddress || 'N/A',
+        signalStrength: wifiDetails?.strength || 'N/A',
+        timestamp: new Date().toISOString()
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('[LiveRouterService] Network connectivity check failed:', error);
+      return false;
+    }
+  }
+
   async restartRouter(): Promise<RestartResult> {
+    // Check network connectivity before proceeding
+    const isConnected = await this.checkNetworkConnectivity();
+    if (!isConnected) {
+      return {
+        success: false,
+        message: 'Network not connected - unable to restart router'
+      };
+    }
+
+    // Initialize dynamic gateway discovery
+    await this.initializeBaseUrl();
+    
     if (Config.app.debugMode) {
       console.log('[LiveRouterService] Initiating router restart:', {
         endpoint: `${this.baseUrl}/api/router/restart`,
@@ -106,6 +177,15 @@ export class LiveRouterService implements RouterService {
   }
 
   async checkConnection(): Promise<boolean> {
+    // Check network connectivity before proceeding
+    const isConnected = await this.checkNetworkConnectivity();
+    if (!isConnected) {
+      return false;
+    }
+
+    // Initialize dynamic gateway discovery
+    await this.initializeBaseUrl();
+    
     try {
       // First try the login endpoint
       const loginResponse = await fetch(`${this.baseUrl}${Config.router.loginEndpoint}`, {
@@ -169,13 +249,22 @@ export class LiveRouterService implements RouterService {
 // Authenticate with the router
    async authenticate(force: boolean = false): Promise<boolean> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        return false;
+      }
+
+      // Initialize dynamic gateway discovery
+      await this.initializeBaseUrl();
+      
       // If we have a session and aren't forcing re-auth, verify the session first
       if (!force && await this.verifySession()) {
         return true;
       }
 
       const config = await this.getRouterConfig();
-      const baseUrl = `http://${config.ip}`;
+      const baseUrl = this.baseUrl; // Use dynamically discovered gateway
 
       console.log('Authenticating with router...');
       
@@ -232,8 +321,17 @@ export class LiveRouterService implements RouterService {
   }
    async verifySession(): Promise<boolean> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        return false;
+      }
+
+      // Initialize dynamic gateway discovery
+      await this.initializeBaseUrl();
+      
       const config = await this.getRouterConfig();
-      const baseUrl = `http://${config.ip}`;
+      const baseUrl = this.baseUrl; // Use dynamically discovered gateway
 
       // Try to access a protected endpoint
       const response = await axiosInstance.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
@@ -249,6 +347,15 @@ export class LiveRouterService implements RouterService {
   }
   async getRouterInfo(): Promise<RouterInfo> {
     try {
+      // Check network connectivity before proceeding
+      const isConnected = await this.checkNetworkConnectivity();
+      if (!isConnected) {
+        throw new Error('Network not connected');
+      }
+
+      // Initialize dynamic gateway discovery
+      await this.initializeBaseUrl();
+      
       // First ensure we're authenticated
       const isAuthenticated = await this.authenticate();
       if (!isAuthenticated) {
@@ -256,7 +363,7 @@ export class LiveRouterService implements RouterService {
       }
       
       const config = await this.getRouterConfig();
-      const baseUrl = `http://${config.ip}`;
+      const baseUrl = this.baseUrl; // Use dynamically discovered gateway
       
       // Request router status page
       const response = await axiosInstance.get(`${baseUrl}/status`, {

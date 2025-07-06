@@ -3,6 +3,9 @@
  * Provides centralized access to all app configuration settings
  */
 
+// Global type for React Native __DEV__ variable
+declare const __DEV__: boolean;
+
 // Helper function to get environment variable with fallback
 const getEnvVar = (key: string, fallback: string): string => {
   const value = process.env[key];
@@ -92,7 +95,11 @@ export const ConfigUtils = {
    * Check if we're in development mode
    */
   isDevelopment: () => {
-    return __DEV__ || Config.app.debugMode;
+    try {
+      return __DEV__ || Config.app.debugMode;
+    } catch {
+      return Config.app.debugMode;
+    }
   },
 
   /**

@@ -17,7 +17,24 @@ export default {
     },
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.ndavat.xfinityrouterapp"
+      bundleIdentifier: "com.ndavat.xfinityrouterapp",
+      infoPlist: {
+        NSLocalNetworkUsageDescription: "This app requires access to your local network to discover and connect to your Xfinity router for device management and monitoring.",
+        NSBonjourServices: [
+          "_http._tcp",
+          "_https._tcp"
+        ],
+        NSAppTransportSecurity: {
+          NSAllowsArbitraryLoads: false,
+          NSExceptionDomains: {
+            "localhost": {
+              NSExceptionAllowsInsecureHTTPLoads: true,
+              NSExceptionMinimumTLSVersion: "TLSv1.0"
+            }
+          },
+          NSAllowsLocalNetworking: true
+        }
+      }
     },
     android: {
       adaptiveIcon: {
