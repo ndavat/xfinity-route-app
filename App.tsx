@@ -5,6 +5,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context"
 import { Toaster } from 'sonner-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MockModeProvider } from './contexts/MockModeContext';
+import { useEffect } from 'react';
+import { startMonitoring, stopMonitoring } from './services/debug/NetworkMonitor';
 import HomeScreen from "./screens/HomeScreen"
 import DevicesScreen from "./screens/DevicesScreen"
 import DeviceSelectionScreen from "./screens/DeviceSelectionScreen"
@@ -38,6 +40,16 @@ function RootStack() {
 }
 
 const App: React.FC = () => {
+  useEffect(() => {
+    // Start network monitoring when app starts
+    startMonitoring();
+
+    // Stop monitoring when app unmounts
+    return () => {
+      stopMonitoring();
+    };
+  }, []);
+
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>

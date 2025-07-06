@@ -1,6 +1,6 @@
 import { RouterService, RestartResult, RouterInfo } from './ServiceInterfaces';
 import { Config } from '../utils/config';
-import axios from 'axios';
+import { axiosInstance } from '../utils/axiosConfig';
 import { parse } from 'node-html-parser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -179,7 +179,7 @@ export class LiveRouterService implements RouterService {
 
       console.log('Authenticating with router...');
       
-      const response = await axios.post(
+      const response = await axiosInstance.post(
         `${baseUrl}/check.php`,
         `username=${config.username}&password=${config.password}`,
         {
@@ -236,7 +236,7 @@ export class LiveRouterService implements RouterService {
       const baseUrl = `http://${config.ip}`;
 
       // Try to access a protected endpoint
-      const response = await axios.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
+      const response = await axiosInstance.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
         withCredentials: true,
       });
 
@@ -259,7 +259,7 @@ export class LiveRouterService implements RouterService {
       const baseUrl = `http://${config.ip}`;
       
       // Request router status page
-      const response = await axios.get(`${baseUrl}/status`, {
+      const response = await axiosInstance.get(`${baseUrl}/status`, {
         withCredentials: true,
       });
       
@@ -267,7 +267,7 @@ export class LiveRouterService implements RouterService {
       // Actual implementation depends on your specific router's web interface
       // Use parse() for HTML content parsing
       // Navigate to network_setup.php to get Internet status and System Uptime
-      const networkSetupResponse = await axios.get(`${baseUrl}/network_setup.php`, {
+      const networkSetupResponse = await axiosInstance.get(`${baseUrl}/network_setup.php`, {
         withCredentials: true,
       });
       

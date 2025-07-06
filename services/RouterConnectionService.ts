@@ -1,7 +1,7 @@
 import { Device } from '../types/Device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { parse } from 'node-html-parser';
-import axios from 'axios';
+import { axiosInstance } from '../utils/axiosConfig';
 import { Config, ConfigUtils } from '../utils/config';
 
 // Default router credentials (loaded from environment variables)
@@ -80,7 +80,7 @@ export class RouterConnectionService {
     
     // Test 1: Basic connectivity
     try {
-      await axios.get(baseUrl, { timeout: Config.api.connectionTimeout, validateStatus: () => true });
+      await axiosInstance.get(baseUrl, { timeout: Config.api.connectionTimeout });
       results.tests.push({ name: 'Basic Connectivity', status: '✅ PASS' });
     } catch (error: any) {
       results.tests.push({ 
@@ -96,8 +96,8 @@ export class RouterConnectionService {
       if (ip === config.ip) continue; // Skip current IP
       
       try {
-        await axios.get(`http://${ip}`, { timeout: Config.api.connectionTimeout, validateStatus: () => true });
-        results.tests.push({ 
+        await axiosInstance.get(`http://${ip}`, { timeout: Config.api.connectionTimeout });
+        results.tests.push({
           name: `Alternative IP (${ip})`, 
           status: '✅ FOUND', 
           details: 'Router might be at this IP instead' 
@@ -109,8 +109,8 @@ export class RouterConnectionService {
     
     // Test 3: Protocol test (HTTPS availability)
     try {
-      await axios.get(`https://${config.ip}`, { timeout: Config.api.connectionTimeout, validateStatus: () => true });
-      results.tests.push({ 
+      await axiosInstance.get(`https://${config.ip}`, { timeout: Config.api.connectionTimeout });
+      results.tests.push({
         name: 'HTTPS Availability', 
         status: '⚠️ AVAILABLE', 
         details: 'HTTPS is available but app uses HTTP only' 
@@ -241,7 +241,7 @@ export class RouterConnectionService {
 
       console.log('Authenticating with router...');
       
-      const response = await axios.post(
+      const response = await axiosInstance.post(
         `${baseUrl}/check.php`,
         `username=${config.username}&password=${config.password}`,
         {
@@ -278,7 +278,7 @@ export class RouterConnectionService {
       const baseUrl = `http://${config.ip}`;
 
       // Try to access a protected endpoint
-      const response = await axios.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
+      const response = await axiosInstance.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
         withCredentials: true,
       });
 
@@ -317,7 +317,7 @@ export class RouterConnectionService {
       const baseUrl = `http://${config.ip}`;
       
       // Request router status page
-      const response = await axios.get(`${baseUrl}/status`, {
+      const response = await axiosInstance.get(`${baseUrl}/status`, {
         withCredentials: true,
       });
       
@@ -325,7 +325,7 @@ export class RouterConnectionService {
       // Actual implementation depends on your specific router's web interface
       // Use parse() for HTML content parsing
       // Navigate to network_setup.php to get Internet status and System Uptime
-      const networkSetupResponse = await axios.get(`${baseUrl}/network_setup.php`, {
+      const networkSetupResponse = await axiosInstance.get(`${baseUrl}/network_setup.php`, {
         withCredentials: true,
       });
       
@@ -355,7 +355,7 @@ export class RouterConnectionService {
       // Get connected devices count from connection_status.php
       let connectedDevices = 0;
       try {
-        const connectionStatusResponse = await axios.get(`${baseUrl}/connection_status.php`, {
+        const connectionStatusResponse = await axiosInstance.get(`${baseUrl}/connection_status.php`, {
           withCredentials: true,
         });
         
@@ -406,7 +406,7 @@ export class RouterConnectionService {
       console.log('Fetching connected devices from router...');
       
       // Request connected devices list using configured endpoint
-      const response = await axios.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
+      const response = await axiosInstance.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
         withCredentials: true,
       });
 
@@ -418,7 +418,7 @@ export class RouterConnectionService {
           throw new Error('Re-authentication failed');
         }
         // Retry the request after authentication
-        const retryResponse = await axios.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
+        const retryResponse = await axiosInstance.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
           withCredentials: true,
         });
         response.data = retryResponse.data;
@@ -600,7 +600,7 @@ export class RouterConnectionService {
         const baseUrl = `http://${config.ip}`;
         
         try {
-          const response = await axios.put(`${baseUrl}/network/devices/${mac}/name`, 
+          const response = await axiosInstance.put(`${baseUrl}/network/devices/${mac}/name`, 
             { customName: name },
             { 
               withCredentials: true,
@@ -659,7 +659,7 @@ export class RouterConnectionService {
       }
       
       // Request to block device
-      const response = await axios.post(`${baseUrl}/network/devices/${mac}/block`, 
+      const response = await axiosInstance.post(`${baseUrl}/network/devices/${mac}/block`, 
         body,
         { 
           withCredentials: true,
@@ -680,7 +680,7 @@ export class RouterConnectionService {
       }
     } catch (error) {
       console.error('Error blocking device:', error);
-      if (axios.isAxiosError(error)) {
+      if (error && error.isAxiosError) {
         console.error('Network Error Details:', {
           message: error.message,
           code: error.code,
@@ -721,7 +721,7 @@ export class RouterConnectionService {
       const baseUrl = `http://${config.ip}`;
       
       // Request to unblock device
-      const response = await axios.post(`${baseUrl}/network/devices/${mac}/unblock`, 
+      const response = await axiosInstance.post(`${baseUrl}/network/devices/${mac}/unblock`, 
         { action: 'unblock' },
         { 
           withCredentials: true,
@@ -742,7 +742,7 @@ export class RouterConnectionService {
       }
     } catch (error) {
       console.error('Error unblocking device:', error);
-      if (axios.isAxiosError(error)) {
+      if (error && error.isAxiosError) {
         console.error('Network Error Details:', {
           message: error.message,
           code: error.code,
@@ -768,7 +768,7 @@ export class RouterConnectionService {
       const baseUrl = `http://${config.ip}`;
       
       // Request to schedule block
-      const response = await axios.post(`${baseUrl}/network/devices/${mac}/schedule`, 
+      const response = await axiosInstance.post(`${baseUrl}/network/devices/${mac}/schedule`, 
         {
           startTime,
           endTime,
@@ -793,7 +793,7 @@ export class RouterConnectionService {
       }
     } catch (error) {
       console.error('Error scheduling block:', error);
-      if (axios.isAxiosError(error)) {
+      if (error && error.isAxiosError) {
         console.error('Network Error Details:', {
           message: error.message,
           code: error.code,
@@ -826,7 +826,7 @@ export class RouterConnectionService {
       formData.append('resetInfo', JSON.stringify(['btn1', 'Device', 'admin']));
 
       // Send restart command
-      await axios.post(
+      await axiosInstance.post(
         url,
         formData,
         {
@@ -849,7 +849,7 @@ export class RouterConnectionService {
       let reconnected = false;
       for (let i = 0; i < 3; i++) {
         try {
-          await axios.get(baseUrl, { timeout: 5000 });
+          await axiosInstance.get(baseUrl, { timeout: 5000 });
           reconnected = true;
           break;
         } catch (error) {
@@ -861,7 +861,7 @@ export class RouterConnectionService {
       return reconnected;
     } catch (error) {
       // A timeout error is expected as the router reboots
-      if (axios.isAxiosError(error) && (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED')) {
+      if (error && error.isAxiosError && (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED')) {
         console.log('Router restart initiated (timeout is expected).');
         return true;
       }

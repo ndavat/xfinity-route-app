@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios, { AxiosInstance } from 'axios';
+import { AxiosInstance } from 'axios';
+import { axiosInstance, createAxiosInstance } from '../../utils/axiosConfig';
 import { Config } from '../../utils/config';
+import { handleSessionCookie, updateAxiosInstanceCookie } from '../../utils/cookieHelpers';
 
 // Authentication result types
 export interface AuthResult {
@@ -39,16 +41,9 @@ export class EnhancedAuthenticationService implements AuthenticationService {
   private sessionRefreshTimer: NodeJS.Timeout | null = null;
 
   constructor() {
-    // Create axios instance with default config
-    this.axiosInstance = axios.create({
-      baseURL: `http://${Config.router.defaultIp}`,
-      timeout: Config.api.timeout,
-      withCredentials: true,
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Cache-Control': 'no-cache',
-      },
-    });
+    // Create a dedicated axios instance for authentication with custom base URL
+    this.axiosInstance = createAxiosInstance();
+    this.axiosInstance.defaults.baseURL = `http://${Config.router.defaultIp}`;
 
     // Initialize session from storage
     this.initializeSession();
@@ -61,9 +56,11 @@ export class EnhancedAuthenticationService implements AuthenticationService {
         const sessionInfo = JSON.parse(storedSession);
         const expiresAt = new Date(sessionInfo.expiresAt);
         
-        // Check if session is still valid
+// Check if session is still valid
         if (expiresAt > new Date()) {
           this.sessionId = sessionInfo.sessionId;
+          // Update axios instance with the restored session cookie
+          updateAxiosInstanceCookie(this.axiosInstance, `SESSIONID=${this.sessionId}`);
           this.setupSessionRefresh(expiresAt);
           console.log('Session restored from storage');
         } else {
@@ -100,17 +97,8 @@ export class EnhancedAuthenticationService implements AuthenticationService {
         }
       );
 
-      // Check for session cookie in response
-      const setCookieHeader = response.headers['set-cookie'];
-      let sessionId: string | null = null;
-
-      if (setCookieHeader) {
-        // Extract SESSIONID from Set-Cookie header
-        const sessionMatch = setCookieHeader.toString().match(/SESSIONID=([^;]+)/);
-        if (sessionMatch) {
-          sessionId = sessionMatch[1];
-        }
-      }
+// Extract and handle session cookie
+      const sessionId = handleSessionCookie(response, this.axiosInstance);
 
       // Check if login was successful (302 redirect is expected)
       if (response.status === 302 && sessionId) {
@@ -182,7 +170,7 @@ export class EnhancedAuthenticationService implements AuthenticationService {
     }
   }
 
-  async refreshSession(): Promise<boolean> {
+async refreshSession(): Promise<boolean> {
     try {
       if (!this.sessionId) {
         console.log('No session to refresh');
@@ -198,6 +186,9 @@ export class EnhancedAuthenticationService implements AuthenticationService {
         },
         validateStatus: (status) => true,
       });
+
+      // Extract and handle session cookie
+      handleSessionCookie(response, this.axiosInstance);
 
       // If we get a login redirect, session is invalid
       if (response.status === 401 || response.data.includes('login.cgi')) {
@@ -229,9 +220,13 @@ export class EnhancedAuthenticationService implements AuthenticationService {
     }
   }
 
-  async verifySession(): Promise<boolean> {
+async verifySession(): Promise<boolean> {
     try {
       if (!this.sessionId) {
+        // No session, try auto-login if credentials are saved
+        if (Config.app.saveCredentials) {
+          return await this.tryAutoLogin();
+        }
         return false;
       }
 
@@ -243,16 +238,31 @@ export class EnhancedAuthenticationService implements AuthenticationService {
         validateStatus: (status) => true,
       });
 
+      // Extract and handle session cookie
+      handleSessionCookie(response, this.axiosInstance);
+
       // Check if we're redirected to login
       const isValid = response.status === 200 && !response.data.includes('login.cgi');
       
       if (!isValid) {
         await this.clearSession();
+        
+        // Try auto-login if credentials are saved
+        if (Config.app.saveCredentials) {
+          console.log('Session invalid, attempting auto-login...');
+          return await this.tryAutoLogin();
+        }
       }
       
       return isValid;
     } catch (error) {
       console.error('Session verification error:', error);
+      
+      // Try auto-login on error if credentials are saved
+      if (Config.app.saveCredentials) {
+        return await this.tryAutoLogin();
+      }
+      
       return false;
     }
   }
@@ -322,7 +332,7 @@ export class EnhancedAuthenticationService implements AuthenticationService {
     }
   }
 
-  // Private helper methods
+// Private helper methods
   private async clearSession() {
     this.sessionId = null;
     if (this.sessionRefreshTimer) {
@@ -330,6 +340,8 @@ export class EnhancedAuthenticationService implements AuthenticationService {
       this.sessionRefreshTimer = null;
     }
     await AsyncStorage.removeItem(SESSION_KEY);
+    // Clear cookies from axios instance
+    updateAxiosInstanceCookie(this.axiosInstance, null);
   }
 
   private setupSessionRefresh(expiresAt: Date) {
@@ -365,7 +377,7 @@ export class EnhancedAuthenticationService implements AuthenticationService {
     }
   }
 
-  private async getStoredCredentials(): Promise<{ username: string; password: string } | null> {
+private async getStoredCredentials(): Promise<{ username: string; password: string } | null> {
     try {
       const stored = await AsyncStorage.getItem(CREDENTIALS_KEY);
       if (stored) {
@@ -382,12 +394,28 @@ export class EnhancedAuthenticationService implements AuthenticationService {
     }
   }
 
-  // Get axios instance for other services to use
+  private async tryAutoLogin(): Promise<boolean> {
+    try {
+      const credentials = await this.getStoredCredentials();
+      if (credentials) {
+        console.log('Attempting automatic login with stored credentials...');
+        const result = await this.login(credentials.username, credentials.password);
+        return result.success;
+      }
+      return false;
+    } catch (error) {
+      console.error('Auto-login error:', error);
+      return false;
+    }
+  }
+
+// Get axios instance for other services to use
   getAxiosInstance(): AxiosInstance {
     // Add session cookie to all requests
-    if (this.sessionId) {
-      this.axiosInstance.defaults.headers.common['Cookie'] = `SESSIONID=${this.sessionId}`;
-    }
+    updateAxiosInstanceCookie(
+      this.axiosInstance, 
+      this.sessionId ? `SESSIONID=${this.sessionId}` : null
+    );
     return this.axiosInstance;
   }
 }
