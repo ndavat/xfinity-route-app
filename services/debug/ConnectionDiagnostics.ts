@@ -44,10 +44,15 @@ interface AuthenticationResult {
 // Test basic connectivity to router
 export const testBasicConnectivity = async (routerIP: string): Promise<boolean> => {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
     const response = await fetch(`http://${routerIP}`, {
       method: 'GET',
-      signal: AbortSignal.timeout(5000),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
     console.log('Basic connectivity test:', response.status);
     return response.ok;
   } catch (error) {

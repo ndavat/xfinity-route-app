@@ -7,6 +7,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { authService } from './core/AuthenticationService';
 import { refreshNetworkState, getCurrentNetworkState, getWifiDetails } from './debug/NetworkMonitor';
 import { GatewayDiscovery } from '../utils/GatewayDiscovery';
+import { AxiosError } from 'axios';
 
 // Default router credentials (loaded from environment variables)
 const DEFAULT_ROUTER_CONFIG = Config.router;
@@ -188,9 +189,9 @@ export class RouterConnectionService {
   // Check if we're in a browser environment that blocks HTTP requests
   static isHttpsToHttpBlocked() {
     // Check if we're in a web environment
-    if (typeof window !== 'undefined' && window.location) {
+    if (typeof (globalThis as any).window !== 'undefined' && (globalThis as any).window.location) {
       // If the page is loaded over HTTPS, HTTP requests will be blocked
-      return window.location.protocol === 'https:';
+      return (globalThis as any).window.location.protocol === 'https:';
     }
     return false;
   }
@@ -753,25 +754,26 @@ export class RouterConnectionService {
       }
     } catch (error) {
       console.error('Error blocking device:', error);
-      if (error && error.isAxiosError) {
+      if (error instanceof Error && 'isAxiosError' in error) {
+        const axiosError = error as AxiosError;
         console.error('Network Error Details:', {
-          message: error.message,
-          code: error.code,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          url: error.config?.url,
-          timeout: error.config?.timeout
+          message: axiosError.message,
+          code: axiosError.code,
+          status: axiosError.response?.status,
+          statusText: axiosError.response?.statusText,
+          url: axiosError.config?.url,
+          timeout: axiosError.config?.timeout
         });
         
-        if (error.code === 'ECONNREFUSED') {
+        if (axiosError.code === 'ECONNREFUSED') {
           console.error('❌ Connection refused - Router might be off or wrong IP address');
-        } else if (error.code === 'ENOTFOUND') {
+        } else if (axiosError.code === 'ENOTFOUND') {
           console.error('❌ Host not found - Check IP address');
-        } else if (error.code === 'ETIMEDOUT') {
+        } else if (axiosError.code === 'ETIMEDOUT') {
           console.error('❌ Connection timeout - Router might be slow or unreachable');
-        } else if (error.code === 'ENETUNREACH') {
+        } else if (axiosError.code === 'ENETUNREACH') {
           console.error('❌ Network unreachable - Check your network connection');
-        } else if (error.message.includes('CORS')) {
+        } else if (axiosError.message.includes('CORS')) {
           console.error('❌ CORS error - Try using mobile app instead of web browser');
         }
       } else {

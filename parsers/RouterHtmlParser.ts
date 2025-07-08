@@ -99,7 +99,7 @@ export class RouterHtmlParser {
       // Try to find hostname
       const hostNameCell = cells.find(cell => 
         cell.getAttribute('headers')?.includes('host') ||
-        cell.className.includes('host') ||
+        cell.classNames.includes('host') ||
         cell.querySelector('a')
       );
       

@@ -1,6 +1,7 @@
 import { AxiosInstance, AxiosResponse } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { addLog } from '../debug/LogStore';
+import { isNode } from '../../utils/platform';
 
 export interface SessionInfo {
   sessionId: string;
@@ -36,27 +37,10 @@ export class SessionManager {
    * Initialize platform-specific cookie handling
    */
   private initializeForPlatform() {
-    if (isNode() && axiosCookieJarSupport && tough) {
-      // Node.js: Use tough-cookie jar
-      try {
-        this.cookieJar = new tough.CookieJar();
-        axiosCookieJarSupport(this.axiosInstance);
-        // Type assertion needed for cookiejar support
-        (this.axiosInstance.defaults as any).jar = this.cookieJar;
-        this.axiosInstance.defaults.withCredentials = true;
-        
-        console.log('SessionManager: Initialized with Node.js cookie jar');
-        this.logAuthAttempt('cookie_jar_init', true, 'Node.js cookie jar initialized');
-      } catch (error) {
-        console.error('Failed to initialize Node.js cookie jar:', error);
-        this.logAuthAttempt('cookie_jar_init', false, `Cookie jar init failed: ${error}`);
-      }
-    } else {
-      // React Native: Use manual cookie management
-      this.initializeMemoryCookies();
-      console.log('SessionManager: Initialized with React Native memory cookies');
-      this.logAuthAttempt('memory_cookies_init', true, 'React Native memory cookies initialized');
-    }
+    // React Native: Use manual cookie management
+    this.initializeMemoryCookies();
+    console.log('SessionManager: Initialized with React Native memory cookies');
+    this.logAuthAttempt('memory_cookies_init', true, 'React Native memory cookies initialized');
   }
 
   /**
@@ -104,10 +88,7 @@ export class SessionManager {
 
     const cookies = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
     
-    if (isNode() && this.cookieJar) {
-      // Node.js: Cookies are handled automatically by tough-cookie
-      return;
-    }
+    // React Native: Handle cookies manually
 
     // React Native: Parse and store cookies manually
     if (!this.memoryCookies[domain]) {
@@ -209,11 +190,6 @@ export class SessionManager {
       if (this.sessionRefreshTimer) {
         clearTimeout(this.sessionRefreshTimer);
         this.sessionRefreshTimer = null;
-      }
-
-      // Clear cookie jar on Node.js
-      if (isNode() && this.cookieJar && this.cookieJar.removeAllCookiesSync) {
-        this.cookieJar.removeAllCookiesSync();
       }
 
       // Clear stored data
@@ -346,10 +322,7 @@ export class SessionManager {
    * Get cookies for a specific domain
    */
   getCookiesForDomain(domain: string = 'default'): { [name: string]: string } {
-    if (isNode() && this.cookieJar) {
-      // For Node.js, cookies are managed by tough-cookie
-      return {};
-    }
+    // Return cookies from memory store
     return this.memoryCookies[domain] || {};
   }
 

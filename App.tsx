@@ -1,12 +1,13 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, Platform } from 'react-native';
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { Toaster } from 'sonner-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MockModeProvider } from './contexts/MockModeContext';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { startMonitoring, stopMonitoring } from './services/debug/NetworkMonitor';
+import { initializeDevelopmentLogger, initializeProductionLogger, Logger } from './services';
 import HomeScreen from "./screens/HomeScreen"
 import DevicesScreen from "./screens/DevicesScreen"
 import DeviceSelectionScreen from "./screens/DeviceSelectionScreen"
@@ -40,13 +41,59 @@ function RootStack() {
 }
 
 const App: React.FC = () => {
-  useEffect(() => {
-    // Start network monitoring when app starts
-    startMonitoring();
+  const [loggerReady, setLoggerReady] = useState(false);
 
-    // Stop monitoring when app unmounts
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        // Initialize logger based on environment
+        const logger = __DEV__ 
+          ? await initializeDevelopmentLogger()
+          : await initializeProductionLogger();
+
+        // Log app startup
+        logger.info('Xfinity Router App started', {
+          platform: Platform.OS,
+          version: Platform.Version,
+          isDevelopment: __DEV__,
+          timestamp: new Date().toISOString()
+        });
+
+        setLoggerReady(true);
+
+        // Start network monitoring when app starts
+        startMonitoring();
+
+        // Log network monitoring start
+        logger.debug('Network monitoring started');
+
+      } catch (error) {
+        console.error('Failed to initialize app:', error);
+        // Still allow app to start even if logger fails
+        setLoggerReady(true);
+        startMonitoring();
+      }
+    };
+
+    initializeApp();
+
+    // Cleanup function
     return () => {
-      stopMonitoring();
+      const cleanup = async () => {
+        try {
+          const logger = Logger.getInstance();
+          if (logger.isReady()) {
+            logger.info('App shutting down');
+            await logger.shutdown();
+          }
+        } catch (error) {
+          console.error('Error during app cleanup:', error);
+        }
+        
+        stopMonitoring();
+      };
+
+      cleanup();
     };
   }, []);
 

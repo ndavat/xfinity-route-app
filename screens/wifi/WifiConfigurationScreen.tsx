@@ -253,7 +253,7 @@ export default function WifiConfigurationScreen() {
               {/* Broadcast SSID */}
               <CustomToggle
                 value={config.broadcastSSID}
-                onValueChange={(value) => setCurrentConfig({ ...config, broadcastSSID: value })}
+                onValueChange={(value) => setCurrentConfig({ ...config, broadcastSSID: value ?? false })}
                 label="Broadcast Network Name"
                 description="Make this network visible to devices"
                 disabled={!config.enabled}
@@ -314,7 +314,7 @@ export default function WifiConfigurationScreen() {
               {/* WPS */}
               <CustomToggle
                 value={config.wpsEnabled}
-                onValueChange={(value) => setCurrentConfig({ ...config, wpsEnabled: value })}
+                onValueChange={(value) => setCurrentConfig({ ...config, wpsEnabled: value ?? false })}
                 label="Enable WPS"
                 description="Allow devices to connect using WPS button"
                 disabled={!config.enabled || config.authMode === 'Open'}
