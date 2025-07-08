@@ -267,7 +267,7 @@ export default function NetworkConfigurationScreen() {
               
               <CustomToggle
                 value={dhcpConfig.enabled}
-                onValueChange={(value) => setDhcpConfig({ ...dhcpConfig, enabled: value })}
+                onValueChange={(value) => setDhcpConfig({ ...dhcpConfig, enabled: value ?? false })}
                 label="Enable DHCP Server"
                 description="Automatically assign IP addresses to devices"
               />
@@ -368,7 +368,7 @@ export default function NetworkConfigurationScreen() {
             
             <CustomToggle
               value={dnsConfig.useDhcpDns}
-              onValueChange={(value) => setDnsConfig({ ...dnsConfig, useDhcpDns: value })}
+              onValueChange={(value) => setDnsConfig({ ...dnsConfig, useDhcpDns: value ?? false })}
               label="Use ISP DNS Servers"
               description="Automatically use DNS servers provided by your ISP"
             />

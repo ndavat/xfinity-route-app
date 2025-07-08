@@ -5,6 +5,7 @@ import { parse } from 'node-html-parser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GatewayDiscovery } from '../utils/GatewayDiscovery';
 import { refreshNetworkState, getCurrentNetworkState, getWifiDetails } from './debug/NetworkMonitor';
+import { info, error, warn, debug, logEvent } from './logging/Logger';
 
 export class LiveRouterService implements RouterService {
   private baseUrl: string;
@@ -19,8 +20,15 @@ export class LiveRouterService implements RouterService {
     this.retryAttempts = Config.api.maxRetryAttempts;
     this.username = Config.router.defaultUsername;
     
+    info('LiveRouterService initialized', {
+      baseUrl: this.baseUrl,
+      timeout: this.timeout,
+      retryAttempts: this.retryAttempts,
+      username: this.username
+    });
+    
     if (Config.app.debugMode) {
-      console.log('[LiveRouterService] Initialized with config:', {
+      debug('[LiveRouterService] Initialized with config:', {
         baseUrl: this.baseUrl,
         timeout: this.timeout,
         retryAttempts: this.retryAttempts,
@@ -177,9 +185,12 @@ export class LiveRouterService implements RouterService {
   }
 
   async checkConnection(): Promise<boolean> {
+    debug('Checking router connection', { baseUrl: this.baseUrl });
+    
     // Check network connectivity before proceeding
     const isConnected = await this.checkNetworkConnectivity();
     if (!isConnected) {
+      warn('Network connectivity check failed');
       return false;
     }
 
@@ -198,8 +209,14 @@ export class LiveRouterService implements RouterService {
         signal: this.createTimeoutSignal()
       });
       
+      info('Router connection attempt', {
+        url: `${this.baseUrl}${Config.router.loginEndpoint}`,
+        status: loginResponse.status,
+        ok: loginResponse.ok
+      });
+      
       if (Config.app.debugMode) {
-        console.log('[LiveRouterService] Login check:', {
+        debug('[LiveRouterService] Login check:', {
           endpoint: `${this.baseUrl}${Config.router.loginEndpoint}`,
           status: loginResponse.status,
           ok: loginResponse.ok,

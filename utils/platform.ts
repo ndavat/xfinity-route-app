@@ -10,7 +10,8 @@
 export function isReactNative(): boolean {
   try {
     // React Native has a global navigator object with a specific product
-    return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+    return typeof (globalThis as any).navigator !== 'undefined' && 
+           (globalThis as any).navigator.product === 'ReactNative';
   } catch {
     return false;
   }

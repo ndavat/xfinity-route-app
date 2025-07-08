@@ -281,7 +281,7 @@ export default function PortForwardingScreen() {
         <CustomToggle
           value={item.enabled}
           onValueChange={async (value) => {
-            const updatedRule = { ...item, enabled: value };
+            const updatedRule = { ...item, enabled: value ?? false };
             setPortRules(rules => rules.map(r => r.id === item.id ? updatedRule : r));
             await firewallService.updatePortForwardingRule(updatedRule);
           }}
@@ -550,7 +550,7 @@ export default function PortForwardingScreen() {
             <CustomToggle
               value={firewallConfig.enablePingBlock}
               onValueChange={(value) => 
-                setFirewallConfig({ ...firewallConfig, enablePingBlock: value })
+                setFirewallConfig({ ...firewallConfig, enablePingBlock: value ?? false })
               }
               label="Block ICMP Ping"
               description="Prevent your router from responding to ping requests"
@@ -559,7 +559,7 @@ export default function PortForwardingScreen() {
             <CustomToggle
               value={firewallConfig.enableIpv6Firewall}
               onValueChange={(value) => 
-                setFirewallConfig({ ...firewallConfig, enableIpv6Firewall: value })
+                setFirewallConfig({ ...firewallConfig, enableIpv6Firewall: value ?? false })
               }
               label="Enable IPv6 Firewall"
               description="Apply firewall rules to IPv6 traffic"

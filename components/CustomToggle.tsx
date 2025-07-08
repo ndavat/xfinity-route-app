@@ -4,7 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 interface CustomToggleProps {
   value: boolean;
-  onValueChange: (value?: boolean) => void | Promise<void>;
+  onValueChange: (value: boolean) => void | Promise<void>;
   disabled?: boolean;
   label?: string;
   description?: string;

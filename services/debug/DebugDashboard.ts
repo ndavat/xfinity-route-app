@@ -500,7 +500,7 @@ const generateRecommendations = (session: DebugSession): string => {
   }
 
   // Environment-specific recommendations
-  if (typeof window !== 'undefined' && window.location?.protocol === 'https:') {
+  if (typeof (globalThis as any).window !== 'undefined' && (globalThis as any).window.location?.protocol === 'https:') {
     recommendations.push('- Use mobile app or local development server for router connection');
     recommendations.push('- HTTPS to HTTP requests are blocked in browser environments');
   }

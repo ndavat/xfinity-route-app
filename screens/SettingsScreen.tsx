@@ -11,6 +11,8 @@ import { useMockMode } from '../contexts/MockModeContext';
 import { RestartRouterButton } from '../components/RestartRouterButton';
 import { ServiceFactory } from '../services/ServiceInterfaces';
 import { CustomToggle } from '../components/CustomToggle';
+import { LoggerManager } from '../components/LoggerManager';
+import { info, error, warn } from '../services';
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
@@ -18,6 +20,7 @@ export default function SettingsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [showLoggerManager, setShowLoggerManager] = useState(false);
 
   // Router configuration (HTTP only)
   const [routerIp, setRouterIp] = useState(Config.router.defaultIp);
@@ -38,6 +41,8 @@ export default function SettingsScreen() {
   const loadSettings = async () => {
     setIsLoading(true);
     try {
+      info('Loading settings screen', { userId: 'current_user' });
+
       // Load router configuration
       const routerConfig = await RouterConnectionService.getRouterConfig();
       const defaultConfig = ConfigUtils.getDefaultRouterConfig();
@@ -51,9 +56,16 @@ export default function SettingsScreen() {
       
       const advancedMode = await AsyncStorage.getItem('show_advanced');
       setShowAdvancedOptions(advancedMode === 'true');
-    } catch (error) {
-      console.error('Error loading settings:', error);
-      toast.error('Failed to load settings');
+
+      info('Settings loaded successfully', {
+        routerIp: routerConfig.ip || defaultConfig.ip,
+        hasPassword: !!(routerConfig.password || ''),
+        debugMode: debugMode === 'true'
+      });
+    } catch (err) {
+      error('Failed to load settings', err as Error, { context: 'loadSettings' });
+      console.error('Error loading settings:', err);
+      toast('Failed to load settings');
     } finally {
       setIsLoading(false);
     }
@@ -195,11 +207,24 @@ export default function SettingsScreen() {
             onValueChange={async (value: boolean = false) => {
               setUseDebugMode(value);
               await AsyncStorage.setItem('debug_mode', value.toString());
-              toast.success(`Debug mode ${value ? 'enabled' : 'disabled'}`);
+              toast(`Debug mode ${value ? 'enabled' : 'disabled'}`);
+              info('Debug mode toggled', { enabled: value });
             }}
             label="Debug Mode"
             description="Show additional debug information and logs"
           />
+
+          {/* Logger Management Button */}
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#34C759' }]}
+            onPress={() => {
+              info('Logger manager opened', { source: 'settings' });
+              setShowLoggerManager(true);
+            }}
+          >
+            <MaterialIcons name="assignment" size={18} color="white" />
+            <Text style={styles.actionButtonText}>Logger Management</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Router Configuration Card */}
@@ -295,6 +320,15 @@ export default function SettingsScreen() {
           <Text style={styles.appCopyright}>© 2025 All rights reserved</Text>
         </View>
       </ScrollView>
+
+      {/* Logger Manager Modal */}
+      <LoggerManager 
+        visible={showLoggerManager}
+        onClose={() => {
+          info('Logger manager closed', { source: 'settings' });
+          setShowLoggerManager(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
