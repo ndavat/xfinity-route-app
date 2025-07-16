@@ -53,6 +53,15 @@ export default {
       name: process.env.EXPO_PUBLIC_APP_NAME || "Xfinity Router App",
       bundler: "metro"
     },
+    plugins: [
+      [
+        "@sentry/react-native/expo",
+        {
+          organization: "YOUR_SENTRY_ORG_SLUG", // TODO: Replace with your Sentry organization slug
+          project: "YOUR_SENTRY_PROJECT_SLUG" // TODO: Replace with your Sentry project slug
+        }
+      ]
+    ],
     extra: {
       // Environment variables available in the app
       EXPO_PUBLIC_DEFAULT_ROUTER_IP: process.env.EXPO_PUBLIC_DEFAULT_ROUTER_IP,

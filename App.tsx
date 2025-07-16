@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StyleSheet, View, Platform } from 'react-native';
@@ -18,8 +19,19 @@ import WifiConfigurationScreen from "./screens/wifi/WifiConfigurationScreen"
 import NetworkConfigurationScreen from "./screens/network/NetworkConfigurationScreen"
 import PortForwardingScreen from "./screens/firewall/PortForwardingScreen"
 import DiagnosticsScreen from "./screens/diagnostics/DiagnosticsScreen"
+import SentryDebugScreen from './screens/debug/SentryDebugScreen';
 
 const Stack = createNativeStackNavigator();
+
+Sentry.init({
+  dsn: 'YOUR_SENTRY_DSN_HERE', // TODO: Replace with your actual Sentry DSN
+  debug: __DEV__,
+  environment: __DEV__ ? 'development' : 'production',
+  integrations: [
+    Sentry.reactNavigationIntegration(),
+  ],
+  tracesSampleRate: 1.0,
+});
 
 function RootStack() {
   return (
@@ -36,6 +48,7 @@ function RootStack() {
       <Stack.Screen name="NetworkConfiguration" component={NetworkConfigurationScreen} />
       <Stack.Screen name="PortForwarding" component={PortForwardingScreen} />
       <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
+      <Stack.Screen name="SentryDebug" component={SentryDebugScreen} />
     </Stack.Navigator>
   );
 }

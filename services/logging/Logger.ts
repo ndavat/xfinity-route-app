@@ -11,6 +11,7 @@ import { LoggerFileManager } from './LoggerFileManager';
 import { LoggerPermissionManager } from './LoggerPermissionManager';
 import { LoggerDataSanitizer } from './LoggerDataSanitizer';
 import { LoggerPerformanceMonitor } from './LoggerPerformanceMonitor';
+import { SentryTransport } from './SentryTransport';
 import { getAppInfo } from '../../utils/appInfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -200,6 +201,9 @@ export class Logger {
         this.flushBuffer();
       }
 
+      // Send to Sentry
+      SentryTransport.log(logEntry);
+
     } catch (error) {
       console.error('Failed to log message:', error);
     }
@@ -338,6 +342,13 @@ export class Logger {
   }
 
   /**
+   * Set user information for logging
+   */
+  public setUser(user: { id?: string; username?: string; email?: string; [key: string]: any } | null): void {
+    SentryTransport.setUser(user);
+  }
+
+  /**
    * Get performance analysis
    */
   public getPerformanceAnalysis(): any {
@@ -376,6 +387,10 @@ export class Logger {
         try {
           const crashReport = await this.generateCrashReport(error);
           this.fatal('Uncaught Exception', error, { crashReport, isFatal });
+          
+          // Send crash report to Sentry
+          SentryTransport.captureException(error, { crashReport, isFatal });
+
           await this.flushBuffer();
         } catch (reportError) {
           console.error('Failed to generate crash report:', reportError);
