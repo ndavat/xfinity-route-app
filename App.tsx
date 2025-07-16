@@ -24,7 +24,7 @@ import SentryDebugScreen from './screens/debug/SentryDebugScreen';
 const Stack = createNativeStackNavigator();
 
 Sentry.init({
-  dsn: 'YOUR_SENTRY_DSN_HERE', // TODO: Replace with your actual Sentry DSN
+  dsn: 'https://73d8add737d936e5e6e9cb306ffbe4ac@o4509680403480576.ingest.us.sentry.io/4509680410361856',
   debug: __DEV__,
   environment: __DEV__ ? 'development' : 'production',
   integrations: [
