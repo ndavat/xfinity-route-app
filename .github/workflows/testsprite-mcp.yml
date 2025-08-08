@@ -1,0 +1,427 @@
+name: TestSprite MCP Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'specs/**'
+      - 'tests/mcp/**'
+      - 'testsprite.mcp.json'
+      - 'src/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'specs/**'
+      - 'tests/mcp/**'
+      - 'testsprite.mcp.json'
+      - 'src/**'
+  workflow_dispatch:
+    inputs:
+      mcp_spec_path:
+        description: 'Specific MCP spec file to test (optional)'
+        required: false
+        type: string
+      force_regenerate:
+        description: 'Force regenerate all MCP test files'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: '20.x'
+  MOCK_ROUTER_PORT: 3001
+  TESTSPRITE_CACHE_VERSION: 'v1'
+
+jobs:
+  mcp-setup:
+    name: MCP Environment Setup
+    runs-on: ubuntu-latest
+    outputs:
+      specs-changed: ${{ steps.check-changes.outputs.specs-changed }}
+      test-matrix: ${{ steps.generate-matrix.outputs.matrix }}
+      cache-key: ${{ steps.cache-info.outputs.cache-key }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Check for spec changes
+        id: check-changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "specs-changed=true" >> $GITHUB_OUTPUT
+          elif git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -E "(specs/|testsprite\.mcp\.json)" > /dev/null; then
+            echo "specs-changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "specs-changed=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Generate test matrix
+        id: generate-matrix
+        run: |
+          if [ -n "${{ github.event.inputs.mcp_spec_path }}" ]; then
+            # Single spec file specified
+            matrix='{"spec": ["${{ github.event.inputs.mcp_spec_path }}"]}'
+          else
+            # Find all MCP spec files
+            spec_files=$(find specs -name "*.mcp" -type f | jq -R -s -c 'split("\n")[:-1]')
+            matrix="{\"spec\": $spec_files}"
+          fi
+          
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          echo "Generated matrix: $matrix"
+          
+      - name: Cache information
+        id: cache-info
+        run: |
+          # Generate cache key based on specs content and testsprite config
+          specs_hash=$(find specs -name "*.mcp" -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1)
+          config_hash=$(sha256sum testsprite.mcp.json | cut -d' ' -f1)
+          cache_key="testsprite-${{ env.TESTSPRITE_CACHE_VERSION }}-$specs_hash-$config_hash"
+          echo "cache-key=$cache_key" >> $GITHUB_OUTPUT
+
+  mcp-parallel-execution:
+    name: MCP Tests (${{ matrix.spec }})
+    runs-on: ubuntu-latest
+    needs: mcp-setup
+    if: needs.mcp-setup.outputs.specs-changed == 'true' || github.event.inputs.force_regenerate == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.mcp-setup.outputs.test-matrix) }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Cache TestSprite artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            tests/mcp/
+            node_modules/.testsprite/
+            .testsprite-cache/
+          key: ${{ needs.mcp-setup.outputs.cache-key }}-${{ matrix.spec }}
+          restore-keys: |
+            ${{ needs.mcp-setup.outputs.cache-key }}-
+            testsprite-${{ env.TESTSPRITE_CACHE_VERSION }}-
+            
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Verify TestSprite MCP plugin
+        run: |
+          echo "Verifying TestSprite MCP plugin installation..."
+          npx testsprite-mcp-plugin --version || {
+            echo "TestSprite MCP plugin not found, installing..."
+            npm install @testsprite/testsprite-mcp@latest
+          }
+          
+      - name: Start optimized mock router
+        run: |
+          # Start mock router with optimized configuration for MCP tests
+          nohup node -e "
+            const { startMockServer } = require('./tests/mocks/router/helpers');
+            
+            // Enhanced mock server for MCP testing
+            const config = {
+              port: ${{ env.MOCK_ROUTER_PORT }},
+              host: 'localhost',
+              enableLogs: false, // Reduce noise in parallel execution
+              testMode: true,
+              mcpOptimized: true
+            };
+            
+            startMockServer(config)
+              .then(result => {
+                console.log('Mock router ready for MCP testing:', result.url);
+                // Keep alive for test duration
+                const keepAlive = setInterval(() => {
+                  // Periodic health check to ensure stability
+                  if (!result.server.listening) {
+                    console.error('Mock server lost connection');
+                    process.exit(1);
+                  }
+                }, 5000);
+                
+                // Graceful shutdown handling
+                process.on('SIGTERM', () => {
+                  clearInterval(keepAlive);
+                  result.server.close();
+                });
+              })
+              .catch(error => {
+                console.error('Mock server startup failed:', error);
+                process.exit(1);
+              });
+          " > mock-router-mcp.log 2>&1 &
+          
+          # Wait for server with improved health check
+          timeout 45s bash -c '
+            until curl -f http://localhost:${{ env.MOCK_ROUTER_PORT }}/health > /dev/null 2>&1; do
+              echo "Waiting for mock router..."
+              sleep 2
+            done
+          '
+          
+          echo "Mock router is ready at http://localhost:${{ env.MOCK_ROUTER_PORT }}"
+          
+      - name: Generate and execute MCP tests for specific spec
+        run: |
+          echo "Processing MCP spec: ${{ matrix.spec }}"
+          
+          # Set environment variables for TestSprite
+          export MOCK_SERVER_URL="http://localhost:${{ env.MOCK_ROUTER_PORT }}"
+          export TESTSPRITE_SPEC_FILE="${{ matrix.spec }}"
+          export TESTSPRITE_FORCE_REGENERATE="${{ github.event.inputs.force_regenerate }}"
+          export TESTSPRITE_PARALLEL_MODE="true"
+          
+          # Run TestSprite MCP for the specific spec file
+          npx testsprite-mcp-plugin generateCodeAndExecute \
+            --config testsprite.mcp.json \
+            --spec "${{ matrix.spec }}" \
+            --output "tests/mcp/$(basename ${{ matrix.spec}} .mcp)" \
+            --verbose
+            
+      - name: Run generated MCP tests
+        run: |
+          export MOCK_SERVER_URL="http://localhost:${{ env.MOCK_ROUTER_PORT }}"
+          
+          # Run the specific generated tests
+          spec_name=$(basename "${{ matrix.spec }}" .mcp)
+          test_dir="tests/mcp/$spec_name"
+          
+          if [ -d "$test_dir" ]; then
+            echo "Running generated tests from $test_dir"
+            npm test -- --testPathPattern="$test_dir" --verbose
+          else
+            echo "No tests generated for ${{ matrix.spec }}"
+            exit 1
+          fi
+          
+      - name: Collect MCP artifacts for this spec
+        if: always()
+        run: |
+          spec_name=$(basename "${{ matrix.spec }}" .mcp)
+          mkdir -p "artifacts/$spec_name"
+          
+          # Copy generated test files
+          if [ -d "tests/mcp/$spec_name" ]; then
+            cp -r "tests/mcp/$spec_name" "artifacts/"
+          fi
+          
+          # Copy spec file
+          cp "${{ matrix.spec }}" "artifacts/$spec_name/"
+          
+          # Copy test results if they exist
+          if [ -f "test-results.xml" ]; then
+            cp "test-results.xml" "artifacts/$spec_name/"
+          fi
+          
+          # Copy coverage for this specific spec
+          if [ -d "coverage" ]; then
+            cp -r "coverage" "artifacts/$spec_name/"
+          fi
+          
+      - name: Upload spec-specific artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-artifacts-$(basename ${{ matrix.spec }} .mcp)
+          path: |
+            artifacts/
+            mock-router-mcp.log
+          retention-days: 30
+          
+      - name: Upload spec test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-coverage-$(basename ${{ matrix.spec }} .mcp)
+          path: |
+            coverage/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  mcp-integration-summary:
+    name: MCP Integration Summary
+    runs-on: ubuntu-latest
+    needs: [mcp-setup, mcp-parallel-execution]
+    if: always() && needs.mcp-setup.outputs.specs-changed == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Download all MCP artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mcp-artifacts-*
+          path: collected-artifacts/
+          
+      - name: Download all MCP coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mcp-coverage-*
+          path: collected-coverage/
+          
+      - name: Merge coverage reports
+        run: |
+          echo "Merging coverage reports from all MCP specs..."
+          
+          # Create merged coverage directory
+          mkdir -p merged-coverage
+          
+          # Find all coverage directories and merge them
+          find collected-coverage -name "coverage" -type d | while read coverage_dir; do
+            if [ -f "$coverage_dir/coverage-final.json" ]; then
+              spec_name=$(echo "$coverage_dir" | sed 's/.*mcp-coverage-\([^/]*\).*/\1/')
+              echo "Processing coverage for spec: $spec_name"
+              cp "$coverage_dir/coverage-final.json" "merged-coverage/coverage-$spec_name.json"
+            fi
+          done
+          
+          # Use nyc to merge coverage reports if multiple exist
+          if [ $(ls merged-coverage/*.json 2>/dev/null | wc -l) -gt 1 ]; then
+            npx nyc merge merged-coverage merged-coverage/final.json
+            npx nyc report --reporter=text --reporter=html --temp-dir=merged-coverage
+          fi
+          
+      - name: Generate MCP test summary
+        run: |
+          echo "# TestSprite MCP Integration Summary" > mcp-summary.md
+          echo "" >> mcp-summary.md
+          echo "## Execution Details" >> mcp-summary.md
+          echo "- Workflow run: ${{ github.run_number }}" >> mcp-summary.md
+          echo "- Trigger: ${{ github.event_name }}" >> mcp-summary.md
+          echo "- Branch: ${{ github.ref_name }}" >> mcp-summary.md
+          echo "- Commit: ${{ github.sha }}" >> mcp-summary.md
+          echo "" >> mcp-summary.md
+          
+          echo "## MCP Specs Processed" >> mcp-summary.md
+          specs_matrix='${{ needs.mcp-setup.outputs.test-matrix }}'
+          echo "$specs_matrix" | jq -r '.spec[]' | while read spec; do
+            spec_name=$(basename "$spec" .mcp)
+            echo "- ✅ $spec (artifacts: mcp-artifacts-$spec_name)" >> mcp-summary.md
+          done
+          
+          echo "" >> mcp-summary.md
+          echo "## Parallel Execution Results" >> mcp-summary.md
+          echo "- MCP Setup: ${{ needs.mcp-setup.result }}" >> mcp-summary.md
+          echo "- Parallel Execution: ${{ needs.mcp-parallel-execution.result }}" >> mcp-summary.md
+          
+          if [ -d "merged-coverage" ]; then
+            echo "" >> mcp-summary.md
+            echo "## Coverage Summary" >> mcp-summary.md
+            echo "Merged coverage report available in artifacts." >> mcp-summary.md
+          fi
+          
+          cat mcp-summary.md
+          
+      - name: Upload merged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-integration-summary
+          path: |
+            mcp-summary.md
+            merged-coverage/
+            collected-artifacts/
+          retention-days: 90
+          
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            if (fs.existsSync('mcp-summary.md')) {
+              const summary = fs.readFileSync('mcp-summary.md', 'utf8');
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## 🚀 TestSprite MCP Integration Results\n\n${summary}`
+              });
+            }
+
+  mcp-nightly-full-suite:
+    name: Nightly MCP Full Suite
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.force_regenerate == 'true')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Start mock router for full suite
+        run: |
+          nohup node -e "
+            const { startMockServer } = require('./tests/mocks/router/helpers');
+            startMockServer({ 
+              port: ${{ env.MOCK_ROUTER_PORT }}, 
+              host: 'localhost', 
+              enableLogs: true,
+              fullSuiteMode: true
+            })
+              .then(result => {
+                console.log('Mock router started for full MCP suite');
+                setInterval(() => {}, 1000);
+              })
+              .catch(error => {
+                console.error('Failed to start mock server:', error);
+                process.exit(1);
+              });
+          " > mock-router-full.log 2>&1 &
+          
+          timeout 60s bash -c 'until curl -f http://localhost:${{ env.MOCK_ROUTER_PORT }}/health; do sleep 1; done'
+          
+      - name: Run complete MCP test suite
+        run: |
+          export MOCK_SERVER_URL="http://localhost:${{ env.MOCK_ROUTER_PORT }}"
+          export TESTSPRITE_FULL_SUITE="true"
+          export TESTSPRITE_FORCE_REGENERATE="true"
+          
+          # Run all MCP specs in sequence for comprehensive testing
+          npm run test:mcp -- --full-suite --regenerate-all
+          
+      - name: Generate comprehensive report
+        run: |
+          echo "# Nightly MCP Full Suite Report" > nightly-mcp-report.md
+          echo "Date: $(date)" >> nightly-mcp-report.md
+          echo "Commit: ${{ github.sha }}" >> nightly-mcp-report.md
+          echo "" >> nightly-mcp-report.md
+          
+          # Add test statistics
+          if [ -f "mcp-test-results.json" ]; then
+            echo "## Test Statistics" >> nightly-mcp-report.md
+            jq -r '.stats | to_entries[] | "- \(.key): \(.value)"' mcp-test-results.json >> nightly-mcp-report.md
+          fi
+          
+      - name: Upload nightly report
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-mcp-full-suite-${{ github.run_number }}
+          path: |
+            nightly-mcp-report.md
+            tests/mcp/
+            mock-router-full.log
+            coverage/
+          retention-days: 180

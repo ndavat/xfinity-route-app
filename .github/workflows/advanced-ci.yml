@@ -1,0 +1,305 @@
+name: Advanced CI Checks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '20.x'
+  MOCK_SERVER_PORT: 3001
+
+jobs:
+  pre-checks:
+    name: Pre-flight Checks
+    runs-on: ubuntu-latest
+    outputs:
+      should-run-e2e: ${{ steps.changes.outputs.should-run-e2e }}
+      should-run-tests: ${{ steps.changes.outputs.should-run-tests }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Detect changes
+        id: changes
+        run: |
+          # Check if E2E tests should run (changes to source code, E2E tests, or dependencies)
+          if git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -E "(src/|e2e/|package\.json|detox\.config\.js)" > /dev/null; then
+            echo "should-run-e2e=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-run-e2e=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check if tests should run (changes to source code, tests, or dependencies)
+          if git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -E "(src/|tests/|specs/|package\.json|jest\.config\.js)" > /dev/null; then
+            echo "should-run-tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-run-tests=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Cache validation
+        run: |
+          echo "Validating package-lock.json integrity..."
+          if [ -f package-lock.json ]; then
+            npm ci --dry-run
+          else
+            echo "Warning: package-lock.json not found"
+          fi
+
+  extended-test-matrix:
+    name: Extended Test Matrix
+    runs-on: ${{ matrix.os }}
+    needs: pre-checks
+    if: needs.pre-checks.outputs.should-run-tests == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: ['18.x', '20.x']
+        exclude:
+          # Reduce matrix for efficiency - only test all OS on latest Node
+          - os: windows-latest
+            node-version: '18.x'
+          - os: macos-latest
+            node-version: '18.x'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js ${{ matrix.node-version }} on ${{ matrix.os }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Start mock router (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          nohup node -e "
+            const { startMockServer } = require('./tests/mocks/router/helpers');
+            startMockServer({ port: ${{ env.MOCK_SERVER_PORT }}, host: 'localhost', enableLogs: true })
+              .then(result => {
+                console.log('Mock router server started at:', result.url);
+                setInterval(() => {}, 1000);
+              })
+              .catch(error => {
+                console.error('Failed to start mock server:', error);
+                process.exit(1);
+              });
+          " > mock-router.log 2>&1 &
+          
+          timeout 30s bash -c 'until curl -f http://localhost:${{ env.MOCK_SERVER_PORT }}/health; do sleep 1; done'
+          
+      - name: Start mock router (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Job -ScriptBlock {
+            node -e "
+              const { startMockServer } = require('./tests/mocks/router/helpers');
+              startMockServer({ port: ${{ env.MOCK_SERVER_PORT }}, host: 'localhost', enableLogs: true })
+                .then(result => {
+                  console.log('Mock router server started at:', result.url);
+                  setInterval(() => {}, 1000);
+                })
+                .catch(error => {
+                  console.error('Failed to start mock server:', error);
+                  process.exit(1);
+                });
+            "
+          }
+          
+          # Wait for server to be ready
+          $timeout = 30
+          $elapsed = 0
+          do {
+            Start-Sleep -Seconds 1
+            $elapsed++
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:${{ env.MOCK_SERVER_PORT }}/health" -UseBasicParsing
+              if ($response.StatusCode -eq 200) { break }
+            } catch {}
+          } while ($elapsed -lt $timeout)
+          
+      - name: Run tests with cross-platform compatibility
+        run: npm test
+        env:
+          MOCK_SERVER_URL: http://localhost:${{ env.MOCK_SERVER_PORT }}
+          CI: true
+          
+      - name: Run MCP tests
+        run: npm run test:mcp
+        env:
+          MOCK_SERVER_URL: http://localhost:${{ env.MOCK_SERVER_PORT }}
+          
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-node${{ matrix.node-version }}
+          path: |
+            test-results.xml
+            coverage/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  code-quality:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: TypeScript type checking
+        run: npx tsc --noEmit --strict
+        
+      - name: Lint check
+        run: |
+          if [ -f .eslintrc.js ] || [ -f .eslintrc.json ] || [ -f eslint.config.js ]; then
+            npx eslint . --ext .ts,.tsx,.js,.jsx --max-warnings 0
+          else
+            echo "ESLint config not found, skipping lint check"
+          fi
+          
+      - name: Format check
+        run: |
+          if [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f prettier.config.js ]; then
+            npx prettier --check "**/*.{ts,tsx,js,jsx,json,md}"
+          else
+            echo "Prettier config not found, skipping format check"
+          fi
+          
+      - name: Dependency vulnerability check
+        run: npm audit --audit-level=high
+        continue-on-error: true
+        
+      - name: Check for circular dependencies
+        run: |
+          npx madge --circular --extensions ts,tsx,js,jsx src/ || echo "Circular dependency check completed"
+          
+      - name: Bundle size check
+        run: |
+          if [ -f webpack.config.js ] || [ -f metro.config.js ]; then
+            echo "Bundle analysis would run here"
+            # npx webpack-bundle-analyzer or similar
+          else
+            echo "No bundle config found, skipping bundle analysis"
+          fi
+
+  performance-tests:
+    name: Performance & Load Tests
+    runs-on: ubuntu-latest
+    needs: pre-checks
+    if: needs.pre-checks.outputs.should-run-tests == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Start mock router for load testing
+        run: |
+          nohup node -e "
+            const { startMockServer } = require('./tests/mocks/router/helpers');
+            startMockServer({ port: ${{ env.MOCK_SERVER_PORT }}, host: 'localhost', enableLogs: false })
+              .then(result => {
+                console.log('Mock router server started for load testing');
+                setInterval(() => {}, 1000);
+              })
+              .catch(error => {
+                console.error('Failed to start mock server:', error);
+                process.exit(1);
+              });
+          " > /dev/null 2>&1 &
+          
+          timeout 30s bash -c 'until curl -f http://localhost:${{ env.MOCK_SERVER_PORT }}/health; do sleep 1; done'
+          
+      - name: Install load testing tools
+        run: |
+          npm install -g autocannon
+          
+      - name: Run API load tests
+        run: |
+          echo "Running load tests on mock router endpoints..."
+          
+          # Test health endpoint
+          autocannon -c 10 -d 30 -p 1 http://localhost:${{ env.MOCK_SERVER_PORT }}/health || true
+          
+          # Test devices endpoint
+          autocannon -c 5 -d 20 -p 1 http://localhost:${{ env.MOCK_SERVER_PORT }}/devices || true
+          
+          echo "Load testing completed"
+          
+      - name: Memory leak detection
+        run: |
+          echo "Memory leak detection would run here"
+          # Tools like clinic.js or similar could be used
+          
+      - name: Upload performance reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-reports
+          path: |
+            performance/
+            *.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  status-report:
+    name: Status Report
+    runs-on: ubuntu-latest
+    needs: [pre-checks, extended-test-matrix, code-quality, performance-tests]
+    if: always()
+    
+    steps:
+      - name: Generate status report
+        run: |
+          echo "## CI Pipeline Status Report" > status-report.md
+          echo "" >> status-report.md
+          echo "### Job Results:" >> status-report.md
+          echo "- Pre-checks: ${{ needs.pre-checks.result }}" >> status-report.md
+          echo "- Extended Test Matrix: ${{ needs.extended-test-matrix.result }}" >> status-report.md
+          echo "- Code Quality: ${{ needs.code-quality.result }}" >> status-report.md
+          echo "- Performance Tests: ${{ needs.performance-tests.result }}" >> status-report.md
+          echo "" >> status-report.md
+          echo "### Configuration:" >> status-report.md
+          echo "- Should run E2E: ${{ needs.pre-checks.outputs.should-run-e2e }}" >> status-report.md
+          echo "- Should run tests: ${{ needs.pre-checks.outputs.should-run-tests }}" >> status-report.md
+          echo "- Node version: ${{ env.NODE_VERSION }}" >> status-report.md
+          echo "- Mock server port: ${{ env.MOCK_SERVER_PORT }}" >> status-report.md
+          
+          cat status-report.md
+          
+      - name: Upload status report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-status-report
+          path: status-report.md
+          retention-days: 30

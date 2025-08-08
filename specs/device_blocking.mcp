@@ -1,0 +1,50 @@
+# Device Blocking Specification
+
+## Feature: Device Access Control Management
+
+### Scenario: Block Connected Device
+**Given** a device with MAC address "ABC:DE:F0:12:34:56" is connected to the router  
+**And** the device appears in the device list with `testID="device-list"`  
+**And** the device item has `testID="device-item-ABC:DE:F0:12:34:56"`  
+**When** the user taps the block button with `testID="block-button-ABC:DE:F0:12:34:56"`  
+**Then** the router API should return status code 200  
+**And** the device status badge with `testID="device-badge-ABC:DE:F0:12:34:56"` should become red  
+**And** the device should be marked as "Blocked" in the UI  
+
+### Scenario: Unblock Previously Blocked Device
+**Given** a device with MAC address "ABC:DE:F0:12:34:56" is currently blocked  
+**And** the device appears in the device list with red badge  
+**And** the device item has `testID="device-item-ABC:DE:F0:12:34:56"`  
+**When** the user taps the unblock button with `testID="unblock-button-ABC:DE:F0:12:34:56"`  
+**Then** the router API should return status code 200  
+**And** the device status badge with `testID="device-badge-ABC:DE:F0:12:34:56"` should become green  
+**And** the device should be marked as "Connected" in the UI  
+
+### Scenario: Block Action Failure
+**Given** a device with MAC address "ABC:DE:F0:12:34:56" is connected to the router  
+**And** the device appears in the device list  
+**When** the user taps the block button with `testID="block-button-ABC:DE:F0:12:34:56"`  
+**And** the router API returns an error status (non-200)  
+**Then** an error message should be displayed with `testID="block-error-message"`  
+**And** the device status badge should remain unchanged  
+**And** a retry option should be available with `testID="retry-block-button"`  
+
+### Scenario: Bulk Device Blocking
+**Given** multiple devices are connected to the router  
+**And** the user has selected multiple devices using checkboxes with `testID="device-checkbox-{MAC}"`  
+**When** the user taps the bulk block button with `testID="bulk-block-button"`  
+**Then** each selected device should be blocked via individual API calls  
+**And** successful blocks should show red badges  
+**And** failed blocks should show error indicators with `testID="bulk-block-error-{MAC}"`  
+
+### UI Components Required:
+- Device list container: `testID="device-list"`
+- Device item: `testID="device-item-{MAC}"`
+- Device status badge: `testID="device-badge-{MAC}"`
+- Block button: `testID="block-button-{MAC}"`
+- Unblock button: `testID="unblock-button-{MAC}"`
+- Block error message: `testID="block-error-message"`
+- Retry block button: `testID="retry-block-button"`
+- Device selection checkbox: `testID="device-checkbox-{MAC}"`
+- Bulk block button: `testID="bulk-block-button"`
+- Bulk block error indicator: `testID="bulk-block-error-{MAC}"`

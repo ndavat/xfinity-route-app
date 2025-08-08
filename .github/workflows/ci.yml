@@ -1,0 +1,288 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test-mcp:
+    name: Test with MCP and Mock Router
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [20.x]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ matrix.node-version }}-
+            ${{ runner.os }}-node-
+            
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Start mock router server
+        run: |
+          # Start the mock router server in background
+          nohup node -e "
+            const { startMockServer } = require('./tests/mocks/router/helpers');
+            startMockServer({ port: 3001, host: 'localhost', enableLogs: true })
+              .then(result => {
+                console.log('Mock router server started at:', result.url);
+                // Keep the process alive
+                setInterval(() => {}, 1000);
+              })
+              .catch(error => {
+                console.error('Failed to start mock server:', error);
+                process.exit(1);
+              });
+          " > mock-router.log 2>&1 &
+          
+          # Wait for server to be ready
+          timeout 30s bash -c 'until curl -f http://localhost:3001/health; do sleep 1; done'
+          echo "Mock router server is ready"
+          
+      - name: Run unit tests
+        run: npm test
+        env:
+          MOCK_SERVER_URL: http://localhost:3001
+          
+      - name: Run MCP tests
+        run: npm run test:mcp
+        env:
+          MOCK_SERVER_URL: http://localhost:3001
+          
+      - name: Generate coverage report
+        run: jest --coverage --coverageReporters=text-lcov > coverage.lcov
+        env:
+          MOCK_SERVER_URL: http://localhost:3001
+          
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.lcov
+          fail_ci_if_error: false
+          
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.node-version }}
+          path: |
+            coverage/
+            coverage.lcov
+          retention-days: 30
+          
+      - name: Upload TestSprite artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: testsprite-artifacts-${{ matrix.node-version }}
+          path: |
+            tests/mcp/
+            specs/
+            *.mcp
+          retention-days: 30
+          if-no-files-found: warn
+          
+      - name: Upload mock router logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-router-logs-${{ matrix.node-version }}
+          path: mock-router.log
+          retention-days: 7
+          if-no-files-found: warn
+
+  e2e-android:
+    name: E2E Tests (Android API 34)
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        api-level: [34]
+        arch: [x86_64]
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-20-
+            ${{ runner.os }}-node-
+            
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          
+      - name: Cache AVD
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.api-level }}-${{ matrix.arch }}
+          
+      - name: Create AVD and generate snapshot for caching
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: ${{ matrix.arch }}
+          target: google_apis
+          avd-name: Pixel_API_34
+          ram-size: 4096M
+          heap-size: 1024M
+          disk-size: 8192M
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: echo "Generated AVD snapshot for caching."
+          
+      - name: Start mock router server
+        run: |
+          # Start the mock router server in background
+          nohup node -e "
+            const { startMockServer } = require('./tests/mocks/router/helpers');
+            startMockServer({ port: 3001, host: '0.0.0.0', enableLogs: true })
+              .then(result => {
+                console.log('Mock router server started at:', result.url);
+                // Keep the process alive
+                setInterval(() => {}, 1000);
+              })
+              .catch(error => {
+                console.error('Failed to start mock server:', error);
+                process.exit(1);
+              });
+          " > mock-router-e2e.log 2>&1 &
+          
+          # Wait for server to be ready
+          timeout 30s bash -c 'until curl -f http://localhost:3001/health; do sleep 1; done'
+          echo "Mock router server is ready for E2E tests"
+          
+      - name: Run E2E tests on Android Emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: ${{ matrix.arch }}
+          target: google_apis
+          avd-name: Pixel_API_34
+          ram-size: 4096M
+          heap-size: 1024M
+          disk-size: 8192M
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            # Set up port forwarding for mock router
+            adb reverse tcp:3001 tcp:3001
+            
+            # Build the Android app for testing
+            npm run e2e:build
+            
+            # Run E2E tests
+            npm run e2e:android:debug
+        env:
+          MOCK_SERVER_URL: http://localhost:3001
+          DETOX_CONFIGURATION: android.emu.debug
+          
+      - name: Upload E2E test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts-android-api${{ matrix.api-level }}
+          path: |
+            e2e/artifacts/
+            mock-router-e2e.log
+            detox_tests.log
+          retention-days: 30
+          if-no-files-found: warn
+          
+      - name: Upload E2E screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots-android-api${{ matrix.api-level }}
+          path: |
+            e2e/artifacts/**/*.png
+            e2e/artifacts/**/*.jpg
+          retention-days: 7
+          if-no-files-found: warn
+
+  build-verification:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    needs: [test-mcp]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Setup Expo CLI
+        run: npm install -g @expo/cli
+        
+      - name: Verify TypeScript compilation
+        run: npx tsc --noEmit
+        
+      - name: Build Android (development)
+        run: npm run build:dev
+        env:
+          EXPO_NO_TELEMETRY: 1
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            dist/
+            .expo/
+          retention-days: 7
+          if-no-files-found: warn

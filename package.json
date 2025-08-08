@@ -16,9 +16,22 @@
     "android": "npx expo run:android",
     "ios": "npx expo run:ios",
     "web": "npx expo start --web",
+    "mock-server:start": "node tests/mocks/router/server.js",
+    "mock-server:stop": "node -e \"require('./tests/mocks/router/server').stopMockServer();\"",
+    "adb:reverse": "adb reverse tcp:8081 tcp:8081",
     "build:dev": "cp .env.dev .env && npx expo build",
     "build:prod": "cp .env.prod .env && npx expo build --release-channel production",
-    "build:preview": "npx expo build --release-channel preview"
+    "build:preview": "npx expo build --release-channel preview",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:mcp": "testsprite-mcp-plugin generateCodeAndExecute --config testsprite.mcp.json",
+    "e2e:build": "detox build",
+    "e2e:test": "detox test",
+    "e2e:android:debug": "detox test --configuration android.emu.debug",
+    "e2e:android:release": "detox test --configuration android.emu.release",
+    "e2e:ios:debug": "detox test --configuration ios.sim.debug",
+    "e2e:ios:release": "detox test --configuration ios.sim.release"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",
@@ -32,6 +45,7 @@
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
+    "@sentry/react-native": "~6.14.0",
     "@supabase/supabase-js": "2.50.0",
     "@tanstack/react-query": "^5.81.5",
     "axios": "1.9.0",
@@ -60,17 +74,28 @@
     "react-native-web": "^0.20.0",
     "sonner-native": "0.20.0",
     "tough-cookie": "^5.1.2",
-    "zustand": "^5.0.6",
-    "@sentry/react-native": "~6.14.0"
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
+    "@testing-library/jest-native": "^5.4.3",
+    "@testing-library/react-native": "^13.2.0",
+    "@testsprite/testsprite-mcp": "^0.0.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
     "@types/react": "~19.0.10",
+    "@types/ws": "^8.18.1",
+    "cors": "^2.8.5",
+    "detox": "^20.40.2",
     "expo-doctor": "^1.13.3",
+    "express": "^5.1.0",
     "jest": "^30.0.4",
+    "jest-environment-jsdom": "^30.0.5",
+    "react-test-renderer": "^19.0.0",
     "sharp": "^0.34.2",
     "ts-jest": "^29.4.0",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "ws": "^8.18.3"
   }
 }

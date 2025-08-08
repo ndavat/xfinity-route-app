@@ -30,6 +30,7 @@ export interface DeviceService {
   blockDevice(id: string): Promise<boolean>;
   unblockDevice(id: string): Promise<boolean>;
   getTrafficData(id: string): Promise<TrafficData | null>;
+  fetchConnectedDevicesPage(): Promise<string>;
 }
 
 // Service Factory for creating service instances based on mode

@@ -1,0 +1,33 @@
+# Router Connection Specification
+
+## Feature: Router Connection Management
+
+### Scenario: Successful Router Connection
+**Given** the user is on the connection screen  
+**When** the user enters a valid IP address in the input field with `testID="ip-input"`  
+**And** the user taps the Connect button with `testID="connect-button"`  
+**Then** the app should establish a connection to the router  
+**And** the RouterStatus component with `testID="router-status"` should display "Connected"  
+**And** the status indicator with `testID="connection-indicator"` should show green/active state  
+
+### Scenario: Invalid IP Address Handling
+**Given** the user is on the connection screen  
+**When** the user enters an invalid IP address in the input field with `testID="ip-input"`  
+**And** the user taps the Connect button with `testID="connect-button"`  
+**Then** an error message should be displayed with `testID="ip-error-message"`  
+**And** the RouterStatus component with `testID="router-status"` should remain "Disconnected"  
+
+### Scenario: Connection Timeout
+**Given** the user is on the connection screen  
+**When** the user enters a valid but unreachable IP address in the input field with `testID="ip-input"`  
+**And** the user taps the Connect button with `testID="connect-button"`  
+**Then** after the timeout period, a timeout error should be displayed with `testID="timeout-error-message"`  
+**And** the RouterStatus component with `testID="router-status"` should show "Connection Failed"  
+
+### UI Components Required:
+- IP input field: `testID="ip-input"`
+- Connect button: `testID="connect-button"`
+- Router status display: `testID="router-status"`
+- Connection indicator: `testID="connection-indicator"`
+- IP error message: `testID="ip-error-message"`
+- Timeout error message: `testID="timeout-error-message"`

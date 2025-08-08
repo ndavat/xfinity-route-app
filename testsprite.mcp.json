@@ -1,35 +1,10 @@
 {
-  "name": "xfinity-route-app",
-  "version": "1.0.0",
-  "description": "TestSprite configuration for Xfinity Route App",
-  "framework": "react-native",
-  "testFramework": "jest",
-  "sourceDir": "./",
-  "testDir": "./__tests__",
-  "specsDir": "./specs",
-  "outputDir": "./testsprite-output",
-  "platform": {
-    "target": "android",
-    "apiLevel": "local"
-  },
-  "mcp": {
-    "server": {
-      "name": "testsprite-mcp",
-      "version": "0.0.9"
-    },
-    "llm": {
-      "provider": "default",
-      "model": "gpt-4"
-    }
-  },
-  "features": {
-    "codeGeneration": true,
-    "testExecution": true,
-    "specValidation": true
-  },
-  "patterns": {
-    "componentFiles": ["**/*.tsx", "**/*.jsx"],
-    "testFiles": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
-    "specFiles": ["specs/**/*.feature", "specs/**/*.spec"]
-  }
+  "runner": "jest",
+  "jestConfig": "./jest.config.js",
+  "srcDir": ".",
+  "specDir": "specs",
+  "outputDir": "tests/mcp",
+  "reactNative": true,
+  "setupFiles": ["./tests/mcp/setupMcp.ts"],
+  "e2e": { "tool": "detox", "config": "detox.config.js" }
 }

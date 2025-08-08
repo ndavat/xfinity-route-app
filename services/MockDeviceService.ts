@@ -151,4 +151,62 @@ export class MockDeviceService implements DeviceService {
     
     return mockTrafficData;
   }
+
+  /**
+   * Mock implementation of fetchConnectedDevicesPage for Step 4
+   * Returns a mock HTML string simulating the connected devices page
+   */
+  async fetchConnectedDevicesPage(): Promise<string> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    if (Config.app.debugMode) {
+      console.log('[MockDeviceService] Returning mock connected devices HTML page');
+    }
+    
+    // Return a mock HTML string that simulates the router's connected devices page
+    const mockHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Connected Devices - Mock</title>
+</head>
+<body>
+  <div id="online-private">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Device Name</th>
+          <th>IP Address</th>
+          <th>MAC Address</th>
+          <th>Connection Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${this.mockDevices.map(device => `
+        <tr>
+          <td headers="host-name"><a>${device.hostname}</a></td>
+          <td>${device.ip}</td>
+          <td>${device.mac}</td>
+          <td headers="connection-type">${device.connectionType}</td>
+          <td headers="dhcp-or-reserved">${device.networkDetails.dhcpType}</td>
+          <td headers="rssi-level">${device.networkDetails.signalStrength} dBm</td>
+          <div class="device-info">
+            <dl>
+              <dd>IPV4 Address ${device.ip}</dd>
+              <dd>IPV6 Address ${device.networkDetails.ipv6 || ''}</dd>
+              <dd>Local Link IPV6 Address ${device.networkDetails.localLinkIpv6 || ''}</dd>
+              <dd>MAC Address ${device.mac}</dd>
+              <dd>Comments ${device.comments || device.customName}</dd>
+            </dl>
+          </div>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>`;
+    
+    return mockHtml;
+  }
 }

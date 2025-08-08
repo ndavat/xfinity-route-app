@@ -46,7 +46,16 @@ export default {
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "ACCESS_WIFI_STATE"
-      ]
+      ],
+      config: {
+        googleMobileAdsAppId: false
+      },
+      // For E2E testing - ensure ACCESS_WIFI_STATE is available in test APK
+      androidTestOnly: {
+        permissions: [
+          "ACCESS_WIFI_STATE"
+        ]
+      }
     },
     web: {
       favicon: "./assets/favicon.png",

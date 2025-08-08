@@ -1,0 +1,73 @@
+# Real-Time Monitoring Specification
+
+## Feature: Real-Time Device Monitoring via WebSocket
+
+### Scenario: New Device Connection via WebSocket
+**Given** the app is connected to the router with active WebSocket connection  
+**And** the device list with `testID="device-list"` is currently displayed  
+**When** a new device connects to the router  
+**And** the WebSocket pushes a new device event with device data  
+**Then** the device list should update within 2 seconds  
+**And** the new device should appear with `testID="device-item-{MAC}"`  
+**And** the device should show "Connected" status  
+**And** the total device count with `testID="device-count"` should increment  
+
+### Scenario: Device Disconnection via WebSocket
+**Given** the app is connected to the router with active WebSocket connection  
+**And** a device with MAC "ABC:DE:F0:12:34:56" is currently shown in the device list  
+**When** the device disconnects from the router  
+**And** the WebSocket pushes a device disconnection event  
+**Then** the device list should update within 2 seconds  
+**And** the device item with `testID="device-item-ABC:DE:F0:12:34:56"` should be removed  
+**And** the total device count with `testID="device-count"` should decrement  
+
+### Scenario: Device Status Change via WebSocket
+**Given** the app is connected to the router with active WebSocket connection  
+**And** a device with MAC "ABC:DE:F0:12:34:56" is currently shown as "Connected"  
+**When** the device status changes (e.g., blocked, bandwidth limited)  
+**And** the WebSocket pushes a status change event  
+**Then** the device status should update within 2 seconds  
+**And** the device badge with `testID="device-badge-ABC:DE:F0:12:34:56"` should reflect the new status  
+**And** the status text should update accordingly  
+
+### Scenario: WebSocket Connection Loss
+**Given** the app was connected to the router via WebSocket  
+**And** the connection status indicator shows `testID="ws-status"` as "Connected"  
+**When** the WebSocket connection is lost  
+**Then** the connection status indicator should show "Disconnected" within 5 seconds  
+**And** a reconnection attempt should be initiated automatically  
+**And** a warning message should display with `testID="ws-reconnect-warning"`  
+
+### Scenario: WebSocket Reconnection Success
+**Given** the WebSocket connection was previously lost  
+**And** the connection status shows "Disconnected"  
+**When** the WebSocket reconnection is successful  
+**Then** the connection status indicator with `testID="ws-status"` should show "Connected"  
+**And** the device list should refresh with current router data  
+**And** the warning message with `testID="ws-reconnect-warning"` should be dismissed  
+
+### Scenario: Bandwidth Usage Updates via WebSocket
+**Given** the app is connected to the router with active WebSocket connection  
+**And** bandwidth monitoring is enabled  
+**When** the WebSocket pushes bandwidth usage data for devices  
+**Then** the bandwidth usage indicators should update within 2 seconds  
+**And** each device's bandwidth display with `testID="bandwidth-usage-{MAC}"` should show current usage  
+**And** the total bandwidth chart with `testID="total-bandwidth-chart"` should update  
+
+### Performance Requirements:
+- WebSocket message processing: < 100ms
+- UI update after WebSocket event: < 2 seconds
+- Connection status detection: < 5 seconds
+- Automatic reconnection attempts: Every 10 seconds (max 5 attempts)
+
+### UI Components Required:
+- Device list container: `testID="device-list"`
+- Device item: `testID="device-item-{MAC}"`
+- Device status badge: `testID="device-badge-{MAC}"`
+- Total device count: `testID="device-count"`
+- WebSocket status indicator: `testID="ws-status"`
+- Reconnection warning: `testID="ws-reconnect-warning"`
+- Bandwidth usage per device: `testID="bandwidth-usage-{MAC}"`
+- Total bandwidth chart: `testID="total-bandwidth-chart"`
+- Connection quality indicator: `testID="connection-quality"`
+- Last update timestamp: `testID="last-update-time"`

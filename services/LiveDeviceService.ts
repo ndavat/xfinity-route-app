@@ -20,21 +20,53 @@ export class LiveDeviceService implements DeviceService {
     return controller.signal;
   }
 
-  async getDevices(): Promise<Device[]> {
+  /**
+   * Fetch connected devices page and store raw HTML (Step 4 implementation)
+   * After successful login, calls api.get('/connected_devices_computers.php')
+   * If response.status is 302, follows redirect automatically (axios handles)
+   * Stores the raw HTML string for parsing
+   */
+  async fetchConnectedDevicesPage(): Promise<string> {
     try {
       const response = await fetch(`${this.baseUrl}${Config.router.deviceEndpoint}`, {
         headers: {
           'Authorization': `Basic ${btoa(`${this.username}:${Config.router.defaultPassword}`)}`,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
-        signal: this.createTimeoutSignal()
+        signal: this.createTimeoutSignal(),
+        redirect: 'follow' // Automatically follow redirects including 302
       });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const responseText = await response.text();
+      // Store and return the raw HTML string for parsing
+      const rawHtmlString = await response.text();
+      
+      if (Config.app.debugMode) {
+        console.log(`[LiveDeviceService] Connected devices page fetched successfully:`, {
+          url: `${this.baseUrl}${Config.router.deviceEndpoint}`,
+          status: response.status,
+          redirected: response.redirected,
+          finalUrl: response.url,
+          htmlLength: rawHtmlString.length
+        });
+      }
+      
+      return rawHtmlString;
+    } catch (error: any) {
+      if (Config.app.debugMode) {
+        console.error('Failed to fetch connected devices page:', error);
+      }
+      throw new Error(`Failed to fetch connected devices page: ${error.message}`);
+    }
+  }
+
+  async getDevices(): Promise<Device[]> {
+    try {
+      // Use the new method to fetch raw HTML
+      const responseText = await this.fetchConnectedDevicesPage();
       const root = parse(responseText);
       
       // Find the online devices section
