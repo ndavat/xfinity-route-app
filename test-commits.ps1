@@ -111,7 +111,7 @@ for ($i = 0; $i -lt $COMMIT_HASHES.Count; $i++) {
 
     # User interaction after app run
     while ($true) {
-        Write-Host "Choose an action for commit $CURRENT_COMMIT:"
+        Write-Host "Choose an action for commit ${CURRENT_COMMIT}:"
         Write-Host "  (N) Move to next commit"
         Write-Host "  (S) Skip current commit"
         Write-Host "  (C) Commit and push local changes"
