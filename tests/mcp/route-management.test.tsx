@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
 // Import actual screens and components (adapting to actual app structure)
@@ -97,7 +97,9 @@ describe('Route Management (Device Management)', () => {
 
       // Tap Add Device button
       const addButton = getByText('Add Device') || getByTestId('add-device-button');
-      fireEvent.press(addButton);
+      await act(async () => {
+        fireEvent.press(addButton);
+      });
 
       // This would typically open a modal or navigate to an add device screen
       // For testing, we'll simulate the creation process
@@ -168,7 +170,9 @@ describe('Route Management (Device Management)', () => {
 
       // Tap Edit button
       const editButton = getByText('Edit') || getByTestId('edit-device-button');
-      fireEvent.press(editButton);
+      await act(async () => {
+        fireEvent.press(editButton);
+      });
 
       await waitFor(() => {
         // This would typically open an edit modal or navigate to edit screen
@@ -198,7 +202,9 @@ describe('Route Management (Device Management)', () => {
 
       // Tap Delete button
       const deleteButton = getByText('Delete') || getByTestId('delete-device-button');
-      fireEvent.press(deleteButton);
+      await act(async () => {
+        fireEvent.press(deleteButton);
+      });
 
       // Confirm deletion (Alert.alert would be called)
       await waitFor(() => {

@@ -3,35 +3,227 @@ import '@testing-library/jest-native/extend-expect';
 // Global test setup
 global.__DEV__ = true;
 
+// Create a single React Native mock object to avoid multiple mocks
+const mockReactNative = {
+  Platform: {
+    OS: 'android',
+    select: jest.fn(({ android }) => android),
+    Version: 21,
+    isPad: false,
+    isTV: false,
+    isTesting: true,
+  },
+  Dimensions: {
+    get: jest.fn(() => ({ width: 390, height: 844 })),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    set: jest.fn(),
+  },
+  Alert: {
+    alert: jest.fn(),
+    prompt: jest.fn(),
+  },
+  Vibration: {
+    vibrate: jest.fn(),
+    cancel: jest.fn(),
+  },
+  StyleSheet: {
+    create: jest.fn(styles => styles),
+    flatten: jest.fn((style) => {
+      // Handle arrays of styles
+      if (Array.isArray(style)) {
+        return style.reduce((acc, s) => ({ ...acc, ...s }), {});
+      }
+      return style || {};
+    }),
+    compose: jest.fn((style1, style2) => {
+      // Compose two styles into an array
+      if (!style1 && !style2) return null;
+      if (!style1) return style2;
+      if (!style2) return style1;
+      return [style1, style2];
+    }),
+    absoluteFill: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+    },
+    absoluteFillObject: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+    },
+    hairlineWidth: 1,
+    setStyleAttributePreprocessor: jest.fn(),
+  },
+  View: 'View',
+  Text: 'Text',
+  ScrollView: 'ScrollView',
+  TouchableOpacity: 'TouchableOpacity',
+  TouchableHighlight: 'TouchableHighlight',
+  TouchableWithoutFeedback: 'TouchableWithoutFeedback',
+  TouchableNativeFeedback: {
+    SelectableBackground: jest.fn(),
+    SelectableBackgroundBorderless: jest.fn(),
+    Ripple: jest.fn(),
+  },
+  Image: 'Image',
+  SafeAreaView: 'SafeAreaView',
+  FlatList: 'FlatList',
+  SectionList: 'SectionList',
+  VirtualizedList: 'VirtualizedList',
+  Switch: 'Switch',
+  RefreshControl: 'RefreshControl',
+  StatusBar: {
+    setBarStyle: jest.fn(),
+    setBackgroundColor: jest.fn(),
+    setHidden: jest.fn(),
+    setTranslucent: jest.fn(),
+    currentHeight: 24,
+  },
+  ActivityIndicator: 'ActivityIndicator',
+  Modal: 'Modal',
+  TextInput: 'TextInput',
+  Keyboard: {
+    dismiss: jest.fn(),
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+    removeListener: jest.fn(),
+    removeAllListeners: jest.fn(),
+  },
+  KeyboardAvoidingView: 'KeyboardAvoidingView',
+  Animated: {
+    View: 'Animated.View',
+    Text: 'Animated.Text',
+    Image: 'Animated.Image',
+    ScrollView: 'Animated.ScrollView',
+    FlatList: 'Animated.FlatList',
+    SectionList: 'Animated.SectionList',
+    Value: jest.fn(() => ({ setValue: jest.fn() })),
+    timing: jest.fn(() => ({ start: jest.fn() })),
+    spring: jest.fn(() => ({ start: jest.fn() })),
+    decay: jest.fn(() => ({ start: jest.fn() })),
+    parallel: jest.fn(() => ({ start: jest.fn() })),
+    sequence: jest.fn(() => ({ start: jest.fn() })),
+    loop: jest.fn(() => ({ start: jest.fn() })),
+    event: jest.fn(),
+    createAnimatedComponent: jest.fn(component => component),
+  },
+  Easing: {
+    linear: jest.fn(),
+    ease: jest.fn(),
+    quad: jest.fn(),
+    cubic: jest.fn(),
+    poly: jest.fn(),
+    sin: jest.fn(),
+    circle: jest.fn(),
+    exp: jest.fn(),
+    elastic: jest.fn(),
+    back: jest.fn(),
+    bounce: jest.fn(),
+    bezier: jest.fn(),
+    in: jest.fn(),
+    out: jest.fn(),
+    inOut: jest.fn(),
+  },
+  InteractionManager: {
+    runAfterInteractions: jest.fn(callback => {
+      callback();
+      return { cancel: jest.fn() };
+    }),
+    createInteractionHandle: jest.fn(),
+    clearInteractionHandle: jest.fn(),
+    setDeadline: jest.fn(),
+  },
+  LayoutAnimation: {
+    configureNext: jest.fn(),
+    create: jest.fn(),
+    Types: {},
+    Properties: {},
+    Presets: {
+      easeInEaseOut: {},
+      linear: {},
+      spring: {},
+    },
+  },
+  PanResponder: {
+    create: jest.fn(() => ({
+      panHandlers: {},
+    })),
+  },
+  PixelRatio: {
+    get: jest.fn(() => 2),
+    getFontScale: jest.fn(() => 1),
+    getPixelSizeForLayoutSize: jest.fn(size => size * 2),
+    roundToNearestPixel: jest.fn(size => Math.round(size)),
+  },
+  AppState: {
+    currentState: 'active',
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+  },
+  Linking: {
+    openURL: jest.fn(() => Promise.resolve()),
+    canOpenURL: jest.fn(() => Promise.resolve(true)),
+    getInitialURL: jest.fn(() => Promise.resolve(null)),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+  },
+  NativeModules: {},
+  NativeEventEmitter: jest.fn(() => ({
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    removeAllListeners: jest.fn(),
+  })),
+  DeviceEventEmitter: {
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    removeAllListeners: jest.fn(),
+    emit: jest.fn(),
+  },
+  BackHandler: {
+    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+    removeEventListener: jest.fn(),
+    exitApp: jest.fn(),
+  },
+  PermissionsAndroid: {
+    request: jest.fn(() => Promise.resolve('granted')),
+    requestMultiple: jest.fn(() => Promise.resolve({})),
+    check: jest.fn(() => Promise.resolve(true)),
+    PERMISSIONS: {},
+    RESULTS: {
+      GRANTED: 'granted',
+      DENIED: 'denied',
+      NEVER_ASK_AGAIN: 'never_ask_again',
+    },
+  },
+  ToastAndroid: {
+    show: jest.fn(),
+    showWithGravity: jest.fn(),
+    showWithGravityAndOffset: jest.fn(),
+    SHORT: 0,
+    LONG: 1,
+    TOP: 0,
+    BOTTOM: 1,
+    CENTER: 2,
+  },
+  Share: {
+    share: jest.fn(() => Promise.resolve({ action: 'sharedAction' })),
+  },
+  Clipboard: {
+    setString: jest.fn(),
+    getString: jest.fn(() => Promise.resolve('')),
+  },
+};
+
+// Export the mock for reuse in other test files
+export { mockReactNative };
+
 // Mock React Native modules
-jest.mock('react-native', () => {
-  return {
-    Platform: {
-      OS: 'android',
-      select: jest.fn(({ android }) => android),
-    },
-    Dimensions: {
-      get: jest.fn(() => ({ width: 390, height: 844 })),
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn(),
-    },
-    Alert: {
-      alert: jest.fn(),
-    },
-    Vibration: {
-      vibrate: jest.fn(),
-    },
-    StyleSheet: {
-      create: jest.fn(styles => styles),
-    },
-    View: 'View',
-    Text: 'Text',
-    ScrollView: 'ScrollView',
-    TouchableOpacity: 'TouchableOpacity',
-    Image: 'Image',
-    SafeAreaView: 'SafeAreaView',
-  };
-});
+jest.mock('react-native', () => mockReactNative);
 
 // Mock Expo modules
 jest.mock('expo-constants', () => ({
@@ -189,18 +381,33 @@ global.mockConnectionStore = mockConnectionStore;
 
 // Suppress console warnings in tests
 const originalWarn = console.warn;
+const originalError = console.error;
+
+// Stub console.warn for specific messages
 console.warn = (...args) => {
   if (
     typeof args[0] === 'string' &&
     (
       args[0].includes('Warning: ReactDOM.render is no longer supported') ||
       args[0].includes('Warning: React.createFactory() is deprecated') ||
-      args[0].includes('componentWillReceiveProps has been renamed')
+      args[0].includes('componentWillReceiveProps has been renamed') ||
+      args[0].includes('react-test-renderer')
     )
   ) {
-    return;
+    return; // no-op for these warnings
   }
   originalWarn.apply(console, args);
+};
+
+// Stub console.error for react-test-renderer messages
+console.error = (...args) => {
+  if (
+    typeof args[0] === 'string' &&
+    args[0].includes('react-test-renderer')
+  ) {
+    return; // no-op for react-test-renderer errors
+  }
+  originalError.apply(console, args);
 };
 
 // Setup fake timers

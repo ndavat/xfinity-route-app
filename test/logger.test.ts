@@ -19,6 +19,7 @@ describe('Logger System', () => {
   let logger: Logger;
 
   beforeEach(async () => {
+    jest.useFakeTimers();
     // Reset singleton
     Logger['instance'] = null;
     
@@ -38,6 +39,7 @@ describe('Logger System', () => {
     if (logger) {
       await logger.shutdown();
     }
+    jest.useRealTimers();
   });
 
   describe('Basic Logging', () => {
@@ -443,6 +445,9 @@ describe('Logger System', () => {
         );
       }
       
+      // Run all timers to resolve the setTimeout calls
+      jest.runAllTimers();
+      
       await Promise.all(promises);
       
       const stats = logger.getStats();
@@ -484,7 +489,8 @@ describe('Logger System', () => {
       testLogger.fatal('Fatal message', new Error('Critical error'));
       
       // Wait for auto-flush
-      await new Promise(resolve => setTimeout(resolve, 600));
+      jest.advanceTimersByTime(600);
+      await Promise.resolve();
       
       // Verify statistics
       const stats = testLogger.getStats();
@@ -525,5 +531,6 @@ export function simulateMemoryPressure() {
 }
 
 export async function waitForAsync(ms: number = 100): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  jest.advanceTimersByTime(ms);
+  return Promise.resolve();
 }

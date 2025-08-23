@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { render, waitFor, act } from '@testing-library/react-native';
 import NetInfo from '@react-native-community/netinfo';
 
 // Mock API service
@@ -90,8 +90,12 @@ describe('Local Android API Integration', () => {
       mockApiService.connect.mockResolvedValue(true);
 
       // Simulate app startup
-      await mockApiService.connect();
-      const healthStatus = await mockApiService.healthCheck();
+      await act(async () => {
+        await mockApiService.connect();
+      });
+      const healthStatus = await act(async () => {
+        return await mockApiService.healthCheck();
+      });
 
       expect(mockApiService.connect).toHaveBeenCalled();
       expect(mockApiService.healthCheck).toHaveBeenCalled();
@@ -104,8 +108,10 @@ describe('Local Android API Integration', () => {
         mockConnectionStore.isConnected = status;
       });
 
-      await mockApiService.healthCheck();
-      mockConnectionStore.setConnected(true);
+      await act(async () => {
+        await mockApiService.healthCheck();
+        mockConnectionStore.setConnected(true);
+      });
 
       expect(mockConnectionStore.setConnected).toHaveBeenCalledWith(true);
       expect(mockConnectionStore.isConnected).toBe(true);
@@ -120,7 +126,9 @@ describe('Local Android API Integration', () => {
         return Promise.reject(new Error('Invalid URL'));
       });
 
-      const result = await mockApiService.healthCheck(localhostUrl);
+      const result = await act(async () => {
+        return await mockApiService.healthCheck(localhostUrl);
+      });
       
       expect(result.status).toBe('OK');
       expect(result.url).toContain('localhost');
@@ -135,11 +143,13 @@ describe('Local Android API Integration', () => {
         mockConnectionStore.connectionError = error.message;
       });
 
-      try {
-        await mockApiService.healthCheck();
-      } catch (error) {
-        mockConnectionStore.setConnectionError(error);
-      }
+      await act(async () => {
+        try {
+          await mockApiService.healthCheck();
+        } catch (error) {
+          mockConnectionStore.setConnectionError(error);
+        }
+      });
 
       expect(mockConnectionStore.setConnectionError).toHaveBeenCalledWith(connectionError);
       expect(mockConnectionStore.connectionError).toBe('Connection refused - API not running');
@@ -168,14 +178,16 @@ describe('Local Android API Integration', () => {
       });
 
       // Simulate periodic reconnection attempts
-      for (let i = 0; i < 3; i++) {
-        try {
-          await mockReconnect();
-          break;
-        } catch (error) {
-          // Continue trying
+      await act(async () => {
+        for (let i = 0; i < 3; i++) {
+          try {
+            await mockReconnect();
+            break;
+          } catch (error) {
+            // Continue trying
+          }
         }
-      }
+      });
 
       expect(mockReconnect).toHaveBeenCalledTimes(3);
       expect(reconnectAttempts).toBe(3);
@@ -187,7 +199,9 @@ describe('Local Android API Integration', () => {
       const mockData = { devices: [], status: 'success' };
       mockApiService.get.mockResolvedValue(mockData);
 
-      const result = await mockApiService.get('/api/devices');
+      const result = await act(async () => {
+        return await mockApiService.get('/api/devices');
+      });
 
       expect(mockApiService.get).toHaveBeenCalledWith('/api/devices');
       expect(result).toEqual(mockData);
@@ -223,7 +237,9 @@ describe('Local Android API Integration', () => {
       const expectedResponse = { id: 123, ...testData };
       mockApiService.post.mockResolvedValue(expectedResponse);
 
-      const result = await mockApiService.post('/api/devices', testData);
+      const result = await act(async () => {
+        return await mockApiService.post('/api/devices', testData);
+      });
 
       expect(mockApiService.post).toHaveBeenCalledWith('/api/devices', testData);
       expect(result).toEqual(expectedResponse);
@@ -232,7 +248,9 @@ describe('Local Android API Integration', () => {
     it('should confirm successful data persistence', async () => {
       mockApiService.post.mockResolvedValue({ success: true, id: 123 });
 
-      const result = await mockApiService.post('/api/devices', { name: 'Test' });
+      const result = await act(async () => {
+        return await mockApiService.post('/api/devices', { name: 'Test' });
+      });
 
       expect(result.success).toBe(true);
       expect(result.id).toBeDefined();
@@ -245,8 +263,10 @@ describe('Local Android API Integration', () => {
         mockConnectionStore.cachedData = { ...mockConnectionStore.cachedData, ...data };
       });
 
-      await mockApiService.put('/api/devices/1', { name: 'Updated Device' });
-      mockConnectionStore.setCachedData(updatedData);
+      await act(async () => {
+        await mockApiService.put('/api/devices/1', { name: 'Updated Device' });
+        mockConnectionStore.setCachedData(updatedData);
+      });
 
       expect(mockConnectionStore.setCachedData).toHaveBeenCalledWith(updatedData);
     });
@@ -257,11 +277,13 @@ describe('Local Android API Integration', () => {
       const apiError = new Error('Invalid request - missing required fields');
       mockApiService.post.mockRejectedValue(apiError);
 
-      try {
-        await mockApiService.post('/api/devices', {});
-      } catch (error) {
-        expect(error.message).toBe('Invalid request - missing required fields');
-      }
+      await act(async () => {
+        try {
+          await mockApiService.post('/api/devices', {});
+        } catch (error) {
+          expect(error.message).toBe('Invalid request - missing required fields');
+        }
+      });
     });
 
     it('should provide meaningful feedback to user', async () => {
@@ -306,7 +328,9 @@ describe('Local Android API Integration', () => {
       });
 
       // Simulate offline change
-      mockConnectionStore.addPendingRequest(pendingChange);
+      act(() => {
+        mockConnectionStore.addPendingRequest(pendingChange);
+      });
 
       expect(mockConnectionStore.addPendingRequest).toHaveBeenCalledWith(pendingChange);
       expect(mockConnectionStore.pendingRequests).toContain(pendingChange);
@@ -334,7 +358,9 @@ describe('Local Android API Integration', () => {
         mockConnectionStore.clearPendingRequests();
       };
 
-      await syncPendingRequests();
+      await act(async () => {
+        await syncPendingRequests();
+      });
 
       expect(mockApiService.post).toHaveBeenCalledWith('/api/devices', { name: 'Device 1' });
       expect(mockApiService.put).toHaveBeenCalledWith('/api/devices/1', { name: 'Updated Device' });
@@ -351,7 +377,9 @@ describe('Local Android API Integration', () => {
         type: 'wifi',
       });
 
-      const networkState = await NetInfo.fetch();
+      const networkState = await act(async () => {
+        return await NetInfo.fetch();
+      });
 
       expect(networkState.isConnected).toBe(true);
       expect(networkState.type).toBe('wifi');

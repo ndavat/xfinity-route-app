@@ -16,8 +16,13 @@ process.env.IOS_USE_LOCALHOST = 'true';
 
 describe('Network Security Tests', () => {
   beforeEach(() => {
+    jest.useFakeTimers();
     // Reset NetInfo mock state before each test
     NetInfoMockUtils.reset();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   describe('Security Configuration', () => {
@@ -95,10 +100,15 @@ describe('Network Security Tests', () => {
       expect(currentState.type).toBe('none');
     });
 
-    it('should simulate network events safely', (done) => {
+    it('should simulate network events safely', async () => {
       const NetInfo = require('@react-native-community/netinfo').default;
       
       let callCount = 0;
+      let resolveFn: (value: void) => void;
+      const networkChangePromise = new Promise<void>((resolve) => {
+        resolveFn = resolve;
+      });
+      
       const unsubscribe = NetInfo.addEventListener((state) => {
         callCount++;
         // Skip initial call with wifi state
@@ -108,7 +118,7 @@ describe('Network Security Tests', () => {
           expect(state.isConnected).toBe(true);
           expect(state.type).toBe('cellular');
           unsubscribe();
-          done();
+          resolveFn();
         }
       });
       
@@ -116,6 +126,11 @@ describe('Network Security Tests', () => {
       setTimeout(() => {
         NetInfoMockUtils.simulateCellularConnection();
       }, 100);
+      
+      // Run the timer to execute the setTimeout callback
+      jest.runAllTimers();
+      
+      await networkChangePromise;
     });
 
     it('should prevent exposure of real network information', async () => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
@@ -60,7 +60,9 @@ describe('App Navigation', () => {
       const { getByTestId, getByText } = render(<TestAppNavigator />);
       
       const devicesTab = getByText('Devices');
-      fireEvent.press(devicesTab);
+      await act(async () => {
+        fireEvent.press(devicesTab);
+      });
       
       await waitFor(() => {
         expect(getByText('Devices')).toBeTruthy();
@@ -71,7 +73,9 @@ describe('App Navigation', () => {
       const { getByText } = render(<TestAppNavigator />);
       
       const settingsTab = getByText('Settings');
-      fireEvent.press(settingsTab);
+      await act(async () => {
+        fireEvent.press(settingsTab);
+      });
       
       await waitFor(() => {
         expect(getByText('Settings')).toBeTruthy();
@@ -87,7 +91,9 @@ describe('App Navigation', () => {
       
       // Navigate to different tab
       const devicesTab = getByText('Devices');
-      fireEvent.press(devicesTab);
+      await act(async () => {
+        fireEvent.press(devicesTab);
+      });
       
       await waitFor(() => {
         expect(getByText('Devices')).toBeTruthy();
@@ -95,7 +101,9 @@ describe('App Navigation', () => {
       
       // Navigate back to Home
       const homeTab = getByText('Home');
-      fireEvent.press(homeTab);
+      await act(async () => {
+        fireEvent.press(homeTab);
+      });
       
       await waitFor(() => {
         expect(getByText('Home')).toBeTruthy();
@@ -109,7 +117,9 @@ describe('App Navigation', () => {
       
       // Navigate to Devices
       const devicesTab = getByText('Devices');
-      fireEvent.press(devicesTab);
+      await act(async () => {
+        fireEvent.press(devicesTab);
+      });
       
       await waitFor(() => {
         expect(getByText('Devices')).toBeTruthy();
