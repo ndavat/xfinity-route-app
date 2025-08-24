@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, RefreshControl, Button } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Device } from '../types/Device';
 import { DeviceService } from '../services/ServiceInterfaces';
+import Alert from './Alert'; // Assuming Alert is in the same directory
 
 interface Props {
   deviceService: DeviceService;
@@ -14,6 +15,7 @@ export const DeviceList: React.FC<Props> = ({ deviceService, style }) => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -21,6 +23,8 @@ export const DeviceList: React.FC<Props> = ({ deviceService, style }) => {
   }, [deviceService]); // Reload when service changes
 
   const loadDevices = async () => {
+    setLoading(true);
+    setError(null);
     try {
       console.log('DeviceList: Loading devices...');
       const deviceList = await deviceService.getDevices();
@@ -28,6 +32,7 @@ export const DeviceList: React.FC<Props> = ({ deviceService, style }) => {
       setDevices(deviceList);
     } catch (error) {
       console.error('Failed to load devices:', error);
+      setError(error.message);
     } finally {
       setLoading(false);
     }
@@ -121,6 +126,19 @@ export const DeviceList: React.FC<Props> = ({ deviceService, style }) => {
     );
   }
 
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered, style]}>
+        <Alert
+          type="error"
+          title="Error"
+          message={error}
+        />
+        <Button title="Retry" onPress={loadDevices} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, style]}>
       <View style={styles.header}>
@@ -148,6 +166,7 @@ const styles = StyleSheet.create({
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   header: {
     padding: 16,

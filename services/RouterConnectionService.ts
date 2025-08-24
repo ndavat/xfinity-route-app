@@ -461,7 +461,7 @@ export class RouterConnectionService {
       // Check network connectivity before proceeding
       const isConnected = await this.checkNetworkConnectivity();
       if (!isConnected) {
-        throw new Error('Network not connected');
+        throw new Error('Network not connected. Please ensure you are connected to the Wi-Fi network.');
       }
       
       const config = await this.getRouterConfig();
@@ -479,7 +479,7 @@ export class RouterConnectionService {
         console.log('Detected login redirect, attempting re-authentication via AuthenticationService...');
         const isAuthenticated = await this.authenticate(true); // Force re-authentication
         if (!isAuthenticated) {
-          throw new Error('Re-authentication failed');
+          throw new Error('Re-authentication failed. Please try again.');
         }
         // Retry the request after authentication
         const retryResponse = await axiosInstance.get(`${baseUrl}${Config.router.deviceEndpoint}`, {
@@ -494,13 +494,13 @@ export class RouterConnectionService {
       // Find the online devices section
       const onlineSection = root.querySelector('#online-private');
       if (!onlineSection) {
-        throw new Error('Invalid router response: Missing online-private section');
+        throw new Error('Invalid router response. The router did not return the expected data.');
       }
 
       // Find the devices table
       const table = onlineSection.querySelector('table.data');
       if (!table) {
-        throw new Error('Invalid router response: Missing devices table');
+        throw new Error('Invalid router response. Could not find the devices table.');
       }
 
       // Find all device rows in the table (skip header and footer)
@@ -571,7 +571,10 @@ export class RouterConnectionService {
       
     } catch (error) {
       console.error('Error getting connected devices:', error);
-      throw new Error(`Failed to get connected devices: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (error instanceof Error) {
+        throw new Error(`Failed to get connected devices: ${error.message}`);
+      }
+      throw new Error('Failed to get connected devices due to an unknown error.');
     }
   }
 

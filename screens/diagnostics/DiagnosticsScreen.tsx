@@ -65,9 +65,7 @@ export default function DiagnosticsScreen() {
       setBatteryStatus(battery);
       setSystemLogs(logs.slice(0, 100)); // Show last 100 logs
       
-      if (isMockMode) {
-        toast.info('Loaded mock diagnostics data');
-      }
+      
     } catch (error: any) {
       console.error('Error loading diagnostics data:', error);
       toast.error('Failed to load diagnostics data');

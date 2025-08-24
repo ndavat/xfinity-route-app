@@ -266,12 +266,7 @@ afterEach(() => {
    - Ensure Android manifest includes INTERNET permission
    - Verify iOS Info.plist has NSLocalNetworkUsageDescription
 
-4. **Mock Data Validation**:
-   ```javascript
-   // Verify mock data matches real API responses
-   const mockResponse = require('./tests/mocks/router/mockData.ts');
-   expect(mockResponse.devices).toBeDefined();
-   ```
+
 
 ﻿# Xfinity Router App
 

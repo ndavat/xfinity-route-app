@@ -63,7 +63,7 @@ export async function useStoredHtmlForParsing() {
   console.log('=== Using Stored HTML for Parsing ===');
   
   try {
-    const deviceService = ServiceFactory.createDeviceService(Config.app.mockDataMode);
+    const deviceService = ServiceFactory.createDeviceService();
     
     // Fetch the raw HTML (Step 4)
     const rawHtmlString = await deviceService.fetchConnectedDevicesPage();

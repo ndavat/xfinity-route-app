@@ -4,17 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { DeviceList } from '../components/DeviceList';
-import { MockModeIndicator } from '../components/MockModeIndicator';
 import { ServiceFactory } from '../services/ServiceInterfaces';
-import { useMockMode } from '../contexts/MockModeContext';
 
 export default function DevicesScreen() {
   const navigation = useNavigation();
-  const { isMockMode } = useMockMode();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Create device service based on current mode
-  const deviceService = ServiceFactory.createDeviceService(isMockMode);
+  // Create device service
+  const deviceService = ServiceFactory.createDeviceService();
 
   const handleSettings = () => {
     (navigation as any).navigate('Settings');
@@ -22,13 +19,6 @@ export default function DevicesScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Mock Mode Ribbon */}
-      {isMockMode && (
-        <View style={styles.mockModeRibbon}>
-          <Text style={styles.mockModeText}>MODE: MOCK</Text>
-        </View>
-      )}
-
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color="white" />
@@ -112,16 +102,5 @@ const styles = StyleSheet.create({
   deviceList: {
     flex: 1,
     marginTop: 8,
-  },
-  mockModeRibbon: {
-    backgroundColor: '#FFD700',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-  },
-  mockModeText: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
 });

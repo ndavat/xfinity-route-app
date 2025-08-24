@@ -77,9 +77,7 @@ export default function PortForwardingScreen() {
         setUpnpDevices(devices);
       }
       
-      if (isMockMode) {
-        toast.info('Loaded mock firewall configuration');
-      }
+      
     } catch (error: any) {
       console.error('Error loading firewall configuration:', error);
       if (error.message.includes('Xfinity mobile app')) {

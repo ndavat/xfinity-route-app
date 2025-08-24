@@ -109,12 +109,7 @@ export const ConfigUtils = {
     return Config.development.enableDiagnostics;
   },
 
-  /**
-   * Check if mock data mode is enabled
-   */
-  isMockDataMode: () => {
-    return Config.app.mockDataMode;
-  },
+  
 
   /**
    * Get the default router configuration

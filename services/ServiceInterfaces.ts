@@ -35,30 +35,15 @@ export interface DeviceService {
 
 // Service Factory for creating service instances based on mode
 export class ServiceFactory {
-  static createRouterService(isMockMode: boolean): RouterService {
-    console.log('ServiceFactory: Creating router service, isMockMode:', isMockMode);
-    
-    if (isMockMode) {
-      console.log('ServiceFactory: Creating MockRouterService');
-      const { MockRouterService } = require('./MockRouterService');
-      return new MockRouterService();
-    } else {
-      console.log('ServiceFactory: Creating LiveRouterService');
-      const { LiveRouterService } = require('./LiveRouterService');
-      return new LiveRouterService();
-    }
+  static createRouterService(): RouterService {
+    console.log('ServiceFactory: Creating LiveRouterService');
+    const { LiveRouterService } = require('./LiveRouterService');
+    return new LiveRouterService();
   }
 
-  static createDeviceService(isMockMode: boolean): DeviceService {
-    console.log('ServiceFactory: Creating device service, isMockMode:', isMockMode);
-    
-    if (isMockMode) {
-      console.log('ServiceFactory: Creating MockDeviceService');
-      const { MockDeviceService } = require('./MockDeviceService');
-      return new MockDeviceService();
-    } else {
-      const { LiveDeviceService } = require('./LiveDeviceService');
-      return new LiveDeviceService();
-    }
+  static createDeviceService(): DeviceService {
+    console.log('ServiceFactory: Creating LiveDeviceService');
+    const { LiveDeviceService } = require('./LiveDeviceService');
+    return new LiveDeviceService();
   }
 }

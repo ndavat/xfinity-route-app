@@ -22,7 +22,7 @@ export default function DeviceSelectionScreen() {
 
   useEffect(() => {
     loadDevices();
-  }, [isMockMode]);
+  }, []);
 
   const loadDevices = async () => {
     setIsLoading(true);

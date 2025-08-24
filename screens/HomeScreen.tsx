@@ -99,20 +99,7 @@ export default function HomeScreen() {
           onPress: () => navigation.navigate('Settings' as never),
           style: 'default'
         },
-        {          text: 'Force Real Mode',
-          onPress: async () => {
-            try {
-              await RouterConnectionService.saveRouterConfig({ useMockData: false });
-              // Force real mode
-              await AsyncStorage.setItem('use_mock_data', 'false');
-              toast.success('Real mode enforced');
-              checkRouterConnection();
-            } catch (error) {
-              toast.error('Failed to enable real mode');
-            }
-          },
-          style: 'default'
-        },
+        {          
         {
           text: 'OK',
           style: 'cancel'

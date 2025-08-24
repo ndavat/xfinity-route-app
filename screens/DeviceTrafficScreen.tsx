@@ -19,7 +19,7 @@ export default function DeviceTrafficScreen() {
   const device = params?.device;
 
   // Create device service based on current mode
-  const deviceService = ServiceFactory.createDeviceService(isMockMode);
+  const deviceService = ServiceFactory.createDeviceService();
 
   useEffect(() => {
     if (device) {

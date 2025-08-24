@@ -53,9 +53,7 @@ export default function NetworkConfigurationScreen() {
       setBridgeModeEnabled(bridgeStatus.enabled);
       setCanToggleBridge(bridgeStatus.canToggle);
       
-      if (isMockMode) {
-        toast.info('Loaded mock network configuration');
-      }
+      
     } catch (error: any) {
       console.error('Error loading network configuration:', error);
       toast.error('Failed to load network settings');

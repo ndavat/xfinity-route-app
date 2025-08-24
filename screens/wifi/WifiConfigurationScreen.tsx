@@ -66,9 +66,7 @@ export default function WifiConfigurationScreen() {
       setChannels2_4(chs2_4);
       setChannels5(chs5);
       
-      if (isMockMode) {
-        toast.info('Loaded mock Wi-Fi configuration');
-      }
+      
     } catch (error: any) {
       console.error('Error loading Wi-Fi configuration:', error);
       toast.error('Failed to load Wi-Fi settings');

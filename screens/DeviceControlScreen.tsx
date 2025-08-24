@@ -219,12 +219,7 @@ export default function DeviceControlScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Mock Mode Ribbon */}
-      {isMockMode && (
-        <View style={styles.mockModeRibbon}>
-          <Text style={styles.mockModeText}>MODE: MOCK</Text>
-        </View>
-      )}
+      
 
       
       <View style={styles.header}>

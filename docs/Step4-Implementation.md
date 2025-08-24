@@ -134,27 +134,7 @@ When `Config.app.debugMode` is enabled, the implementation provides detailed log
 The MockDeviceService provides a complete HTML simulation for development:
 
 ```typescript
-async fetchConnectedDevicesPage(): Promise<string> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  // Return mock HTML with actual device data structure
-  const mockHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <title>Connected Devices - Mock</title>
-</head>
-<body>
-  <div id="online-private">
-    <table class="data">
-      <!-- Device rows with actual mock data -->
-    </table>
-  </div>
-</body>
-</html>`;
-  
-  return mockHtml;
-}
+
 ```
 
 ### Integration with Existing Code

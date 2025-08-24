@@ -91,14 +91,7 @@ graph TD
 4. Network layer manages HTTP communication and error handling
 5. Data is returned to UI for rendering
 
-## Mock vs Live Mode
-- **Service Switching**: 
-  ```ts
-  const routerService = ServiceFactory.createRouterService(isMockMode);
-  const deviceService = ServiceFactory.createDeviceService(isMockMode);
-  ```
-- **Mock Mode**: Uses predefined test data for development
-- **Live Mode**: Communicates directly with router via HTTP requests
+
 
 ## Security Considerations
 - HTTPS enforcement through `isHttpsToHttpBlocked()` utility

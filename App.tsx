@@ -5,7 +5,7 @@ import { StyleSheet, View, Platform } from 'react-native';
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { Toaster } from 'sonner-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { MockModeProvider } from './contexts/MockModeContext';
+
 import { useEffect, useState } from 'react';
 import { startMonitoring, stopMonitoring } from './services/debug/NetworkMonitor';
 import { initializeDevelopmentLogger, initializeProductionLogger, Logger } from './services';
@@ -113,14 +113,12 @@ const App: React.FC = () => {
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
-        <MockModeProvider>
-          <View style={styles.container}>
+        <View style={styles.container}>
             <Toaster />
             <NavigationContainer>
               <RootStack />
             </NavigationContainer>
           </View>
-        </MockModeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

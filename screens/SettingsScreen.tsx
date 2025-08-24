@@ -316,7 +316,7 @@ export default function SettingsScreen() {
 
         <View style={styles.appInfoCard}>
           <Text style={styles.appName}>{Config.app.name}</Text>
-          <Text style={styles.appVersion}>Version {Config.app.version} - {isMockMode ? 'Mock Mode' : 'Live Mode'}</Text>
+          <Text style={styles.appVersion}>Version {Config.app.version}</Text>
           <Text style={styles.appCopyright}>© 2025 All rights reserved</Text>
         </View>
       </ScrollView>
