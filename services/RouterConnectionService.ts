@@ -163,6 +163,64 @@ export class RouterConnectionService {
     };
   }
 
+  // Network connectivity check
+  static async checkNetworkConnectivity(ip: string): Promise<{ isReachable: boolean; error?: string }> {
+    try {
+      console.log('🔍 Checking network connectivity to:', ip);
+
+      // Try a simple HEAD request first (faster than GET)
+      const response = await axios.head(`http://${ip}`, {
+        timeout: 3000, // Short timeout for connectivity check
+        validateStatus: () => true, // Accept any status code
+        headers: {
+          'User-Agent': 'XfinityRouterApp-ConnectivityCheck/1.0'
+        }
+      });
+
+      console.log('✅ Network connectivity check passed:', {
+        status: response.status,
+        reachable: true
+      });
+
+      return { isReachable: true };
+    } catch (error: any) {
+      console.log('❌ Network connectivity check failed:', {
+        error: error.message,
+        code: error.code
+      });
+
+      return {
+        isReachable: false,
+        error: error.code || error.message
+      };
+    }
+  }
+
+  // Try to find the correct router IP address
+  static async findRouterIP(): Promise<string | null> {
+    const commonRouterIPs = [
+      '10.0.0.1',      // Xfinity default
+      '192.168.1.1',   // Common default
+      '192.168.0.1',   // Another common default
+      '192.168.1.254', // Some routers use this
+      '10.1.10.1'      // Some Xfinity routers
+    ];
+
+    console.log('🔍 Searching for router IP address...');
+
+    for (const ip of commonRouterIPs) {
+      console.log(`Testing IP: ${ip}`);
+      const result = await this.checkNetworkConnectivity(ip);
+      if (result.isReachable) {
+        console.log(`✅ Found router at: ${ip}`);
+        return ip;
+      }
+    }
+
+    console.log('❌ No router found at common IP addresses');
+    return null;
+  }
+
   // Check connection to router
   static async checkConnection() {
     try {
@@ -178,17 +236,55 @@ export class RouterConnectionService {
         username: config.username,
         useMockData: config.useMockData
       });
-      console.log('Attempting to connect to router at:', baseUrl);
+
+      // Perform network connectivity check first
+      let routerIP = config.ip;
+      const connectivityCheck = await this.checkNetworkConnectivity(routerIP);
+      if (!connectivityCheck.isReachable) {
+        console.error('❌ Pre-connection network check failed for', routerIP, ':', connectivityCheck.error);
+        console.log('🔍 Attempting to find router at other common IP addresses...');
+
+        // Try to find the router at other common IP addresses
+        const foundIP = await this.findRouterIP();
+        if (foundIP) {
+          console.log('✅ Found router at different IP:', foundIP);
+          routerIP = foundIP;
+          // Update the config with the found IP
+          const updatedConfig = { ...config, ip: foundIP };
+          await AsyncStorage.setItem(Config.storage.routerConfigKey, JSON.stringify(updatedConfig));
+          console.log('💾 Updated router configuration with new IP');
+        } else {
+          console.error('❌ Router not found at any common IP addresses');
+          console.error('💡 Please check:');
+          console.error('  • Router is powered on and functioning');
+          console.error('  • Device is connected to router\'s WiFi network');
+          console.error('  • Router web interface is enabled');
+          console.error('  • Try accessing router web interface in a browser first');
+          return false;
+        }
+      }
+
+      // Update baseUrl with the correct router IP
+      const finalBaseUrl = `http://${routerIP}`;
+      console.log('Attempting to connect to router at:', finalBaseUrl);
       
-      // Try to connect to the router's login page
-      const response = await axios.get(baseUrl, {
-        timeout: Config.api.timeout,
+      // Try to connect to the router's login page with enhanced error handling
+      const response = await axios.get(finalBaseUrl, {
+        timeout: Config.api.connectionTimeout, // Use shorter timeout for initial connection
         validateStatus: (status) => true,
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Cache-Control': 'no-cache',
+          'User-Agent': 'Mozilla/5.0 (compatible; XfinityRouterApp/1.0)',
+          'Connection': 'close'
         },
-        withCredentials: false
+        withCredentials: false,
+        // Additional axios configuration for better network handling
+        maxRedirects: 5,
+        decompress: true,
+        // Disable HTTP/2 to avoid potential issues
+        httpAgent: false,
+        httpsAgent: false
       });
       
       console.log('Router response details:', {
@@ -205,14 +301,14 @@ export class RouterConnectionService {
         console.error('Connection failed:', {
           status: response.status,
           statusText: response.statusText,
-          url: baseUrl
+          url: finalBaseUrl
         });
         return false;
       }
       
       return true;
     } catch (error: any) {
-      // Enhanced error logging
+      // Enhanced error logging with network diagnostics
       console.error('=== ROUTER CONNECTION ERROR ===');
       if (axios.isAxiosError(error)) {
         console.error('Network Error Details:', {
@@ -223,8 +319,21 @@ export class RouterConnectionService {
           url: error.config?.url,
           timeout: error.config?.timeout
         });
-        
-        if (error.code === 'ECONNREFUSED') {
+
+        // Specific error handling for different network issues
+        if (error.code === 'ERR_NETWORK') {
+          console.error('❌ Network Error - This could be due to:');
+          console.error('  • Router is not accessible at the IP address');
+          console.error('  • Device is not connected to the same network as the router');
+          console.error('  • Router firewall is blocking the connection');
+          console.error('  • CORS policy blocking the request (if running in browser)');
+          console.error('  • Router web interface is disabled');
+          console.error('💡 Troubleshooting steps:');
+          console.error('  1. Verify router IP address (usually 10.0.0.1 or 192.168.1.1)');
+          console.error('  2. Check if you can access router web interface in browser');
+          console.error('  3. Ensure device is connected to router\'s WiFi network');
+          console.error('  4. Try restarting the router');
+        } else if (error.code === 'ECONNREFUSED') {
           console.error('❌ Connection refused - Router might be off or wrong IP address');
         } else if (error.code === 'ENOTFOUND') {
           console.error('❌ Host not found - Check IP address');
@@ -234,6 +343,8 @@ export class RouterConnectionService {
           console.error('❌ Network unreachable - Check your network connection');
         } else if (error.message.includes('CORS')) {
           console.error('❌ CORS error - Try using mobile app instead of web browser');
+        } else {
+          console.error('❌ Unknown network error:', error.code || 'NO_CODE');
         }
       } else {
         console.error('Unexpected error:', error);
