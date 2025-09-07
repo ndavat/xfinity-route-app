@@ -10,6 +10,7 @@ import { EnvironmentAlert } from '../components/EnvironmentAlert';
 import { Config } from '../utils/config';
 import { LogManager } from '../services/LogManager';
 import LogAlert from '../components/LogAlert';
+import ConnectionStatusAlert from '../components/ConnectionStatusAlert';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -226,7 +227,15 @@ export default function HomeScreen() {
         <>
           {/* Environment Alert */}
           <EnvironmentAlert />
-          
+
+          {/* Connection Status Alert */}
+          <ConnectionStatusAlert onStatusChange={(status) => {
+            setIsConnected(status.canConnect);
+            if (status.mode === 'mock') {
+              console.log('App is running in mock data mode');
+            }
+          }} />
+
           <View style={[styles.statusCard, isConnected ? styles.statusConnected : styles.statusDisconnected]}>
             <View style={styles.statusHeader}>
               <MaterialIcons 

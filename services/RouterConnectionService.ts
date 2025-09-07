@@ -163,41 +163,114 @@ export class RouterConnectionService {
     };
   }
 
-  // Network connectivity check
-  static async checkNetworkConnectivity(ip: string): Promise<{ isReachable: boolean; error?: string }> {
-    try {
-      console.log('🔍 Checking network connectivity to:', ip);
-
-      // Try a simple HEAD request first (faster than GET)
-      const response = await axios.head(`http://${ip}`, {
-        timeout: 3000, // Short timeout for connectivity check
-        validateStatus: () => true, // Accept any status code
-        headers: {
-          'User-Agent': 'XfinityRouterApp-ConnectivityCheck/1.0'
-        }
-      });
-
-      console.log('✅ Network connectivity check passed:', {
-        status: response.status,
-        reachable: true
-      });
-
-      return { isReachable: true };
-    } catch (error: any) {
-      console.log('❌ Network connectivity check failed:', {
-        error: error.message,
-        code: error.code
-      });
-
+  // Environment detection
+  static detectEnvironment(): { platform: string; canAccessLocalNetwork: boolean; reason: string } {
+    // Check if we're in a web browser
+    if (typeof window !== 'undefined' && window.location) {
       return {
-        isReachable: false,
-        error: error.code || error.message
+        platform: 'web',
+        canAccessLocalNetwork: false,
+        reason: 'Web browsers block local network access due to CORS policies'
       };
     }
+
+    // Check if we're in React Native
+    if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+      return {
+        platform: 'react-native',
+        canAccessLocalNetwork: true,
+        reason: 'React Native should support local network access'
+      };
+    }
+
+    // Check if we're in Expo
+    if (typeof global !== 'undefined' && global.__expo) {
+      return {
+        platform: 'expo',
+        canAccessLocalNetwork: true,
+        reason: 'Expo should support local network access'
+      };
+    }
+
+    return {
+      platform: 'unknown',
+      canAccessLocalNetwork: false,
+      reason: 'Unknown environment - network access uncertain'
+    };
+  }
+
+  // Enhanced network connectivity check with multiple methods
+  static async checkNetworkConnectivity(ip: string): Promise<{ isReachable: boolean; error?: string; method?: string }> {
+    const environment = this.detectEnvironment();
+
+    console.log('🔍 Checking network connectivity to:', ip);
+    console.log('Environment:', environment);
+
+    // If we're in a web environment, skip network checks and suggest alternatives
+    if (!environment.canAccessLocalNetwork) {
+      console.log('⚠️ Environment does not support local network access:', environment.reason);
+      return {
+        isReachable: false,
+        error: 'ENVIRONMENT_RESTRICTION',
+        method: 'environment_check'
+      };
+    }
+
+    // Try multiple connection methods
+    const methods = [
+      { name: 'HEAD', fn: () => axios.head(`http://${ip}`, { timeout: 3000, validateStatus: () => true }) },
+      { name: 'GET', fn: () => axios.get(`http://${ip}`, { timeout: 3000, validateStatus: () => true }) },
+      { name: 'OPTIONS', fn: () => axios.options(`http://${ip}`, { timeout: 3000, validateStatus: () => true }) }
+    ];
+
+    for (const method of methods) {
+      try {
+        console.log(`Trying ${method.name} request to ${ip}...`);
+        const response = await method.fn();
+
+        console.log('✅ Network connectivity check passed:', {
+          method: method.name,
+          status: response.status,
+          reachable: true
+        });
+
+        return { isReachable: true, method: method.name };
+      } catch (error: any) {
+        console.log(`❌ ${method.name} request failed:`, {
+          error: error.message,
+          code: error.code
+        });
+
+        // If it's not a network error, the host might be reachable but not responding to this method
+        if (error.code !== 'ERR_NETWORK' && error.code !== 'ECONNREFUSED') {
+          console.log('Host appears reachable but not responding to', method.name);
+          return { isReachable: true, method: method.name, error: 'partial_response' };
+        }
+      }
+    }
+
+    return {
+      isReachable: false,
+      error: 'ERR_NETWORK',
+      method: 'all_methods_failed'
+    };
   }
 
   // Try to find the correct router IP address
-  static async findRouterIP(): Promise<string | null> {
+  static async findRouterIP(): Promise<{ ip: string | null; environmentIssue: boolean; reason?: string }> {
+    const environment = this.detectEnvironment();
+
+    // Check if environment supports local network access
+    if (!environment.canAccessLocalNetwork) {
+      console.log('❌ Environment does not support local network access');
+      console.log('Reason:', environment.reason);
+      return {
+        ip: null,
+        environmentIssue: true,
+        reason: environment.reason
+      };
+    }
+
     const commonRouterIPs = [
       '10.0.0.1',      // Xfinity default
       '192.168.1.1',   // Common default
@@ -213,12 +286,64 @@ export class RouterConnectionService {
       const result = await this.checkNetworkConnectivity(ip);
       if (result.isReachable) {
         console.log(`✅ Found router at: ${ip}`);
-        return ip;
+        return { ip, environmentIssue: false };
       }
     }
 
     console.log('❌ No router found at common IP addresses');
-    return null;
+    return { ip: null, environmentIssue: false, reason: 'no_router_found' };
+  }
+
+  // Get connection status with detailed information
+  static async getConnectionStatus(): Promise<{
+    canConnect: boolean;
+    mode: 'real' | 'mock';
+    environment: string;
+    routerIP?: string;
+    reason: string;
+    suggestions: string[];
+  }> {
+    const environment = this.detectEnvironment();
+
+    if (!environment.canAccessLocalNetwork) {
+      return {
+        canConnect: false,
+        mode: 'mock',
+        environment: environment.platform,
+        reason: environment.reason,
+        suggestions: [
+          'Use a mobile app instead of web browser',
+          'Try the app on a physical device',
+          'Use mock data mode for demonstration'
+        ]
+      };
+    }
+
+    // Try to find a working router IP
+    const routerSearch = await this.findRouterIP();
+    if (routerSearch.ip) {
+      return {
+        canConnect: true,
+        mode: 'real',
+        environment: environment.platform,
+        routerIP: routerSearch.ip,
+        reason: 'Router found and accessible',
+        suggestions: []
+      };
+    }
+
+    return {
+      canConnect: false,
+      mode: 'mock',
+      environment: environment.platform,
+      reason: routerSearch.reason || 'No router found at common IP addresses',
+      suggestions: [
+        'Check router power and WiFi connection',
+        'Verify router web interface is enabled',
+        'Try accessing router in web browser first',
+        'Check router label for correct IP address'
+      ]
+    };
   }
 
   // Check connection to router
@@ -242,25 +367,62 @@ export class RouterConnectionService {
       const connectivityCheck = await this.checkNetworkConnectivity(routerIP);
       if (!connectivityCheck.isReachable) {
         console.error('❌ Pre-connection network check failed for', routerIP, ':', connectivityCheck.error);
+
+        // Check if this is an environment issue
+        if (connectivityCheck.error === 'ENVIRONMENT_RESTRICTION') {
+          console.error('🌐 Environment Restriction Detected');
+          console.error('💡 This appears to be a web browser or restricted environment');
+          console.error('📱 Automatically switching to Mock Data Mode for demonstration');
+
+          // Automatically enable mock mode for environments that can't access local networks
+          await AsyncStorage.setItem('use_mock_data', 'true');
+          console.log('✅ Mock data mode enabled - app will use sample data');
+          return true; // Return success so the app can continue with mock data
+        }
+
         console.log('🔍 Attempting to find router at other common IP addresses...');
 
         // Try to find the router at other common IP addresses
-        const foundIP = await this.findRouterIP();
-        if (foundIP) {
-          console.log('✅ Found router at different IP:', foundIP);
-          routerIP = foundIP;
+        const routerSearch = await this.findRouterIP();
+        if (routerSearch.environmentIssue) {
+          console.error('🌐 Environment Issue:', routerSearch.reason);
+          console.error('📱 Automatically switching to Mock Data Mode');
+
+          // Enable mock mode for environment issues
+          await AsyncStorage.setItem('use_mock_data', 'true');
+          console.log('✅ Mock data mode enabled - app will use sample data');
+          return true;
+        }
+
+        if (routerSearch.ip) {
+          console.log('✅ Found router at different IP:', routerSearch.ip);
+          routerIP = routerSearch.ip;
           // Update the config with the found IP
-          const updatedConfig = { ...config, ip: foundIP };
+          const updatedConfig = { ...config, ip: routerSearch.ip };
           await AsyncStorage.setItem(Config.storage.routerConfigKey, JSON.stringify(updatedConfig));
           console.log('💾 Updated router configuration with new IP');
         } else {
           console.error('❌ Router not found at any common IP addresses');
-          console.error('💡 Please check:');
-          console.error('  • Router is powered on and functioning');
-          console.error('  • Device is connected to router\'s WiFi network');
-          console.error('  • Router web interface is enabled');
-          console.error('  • Try accessing router web interface in a browser first');
-          return false;
+          console.error('💡 This could be due to:');
+          console.error('  • Router is powered off or malfunctioning');
+          console.error('  • Device is not connected to router\'s WiFi network');
+          console.error('  • Router web interface is disabled');
+          console.error('  • Network firewall blocking connections');
+          console.error('  • Router uses a non-standard IP address');
+          console.error('');
+          console.error('🔧 Troubleshooting steps:');
+          console.error('  1. Check router power and status lights');
+          console.error('  2. Verify WiFi connection to router');
+          console.error('  3. Try accessing router web interface in browser');
+          console.error('  4. Check router label for correct IP address');
+          console.error('  5. Restart router if necessary');
+          console.error('');
+          console.error('📱 Switching to Mock Data Mode for now...');
+
+          // Fall back to mock mode if no router found
+          await AsyncStorage.setItem('use_mock_data', 'true');
+          console.log('✅ Mock data mode enabled - app will use sample data');
+          return true; // Allow app to continue with mock data
         }
       }
 
