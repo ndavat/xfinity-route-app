@@ -68,6 +68,17 @@ export const Config = {
     deviceNamesKey: getEnvVar('EXPO_PUBLIC_DEVICE_NAMES_KEY', 'xfinity_device_names')
   },
 
+  // Log Configuration
+  logging: {
+    enabled: getEnvBoolean('EXPO_PUBLIC_LOG_ENABLED', true),
+    level: getEnvVar('EXPO_PUBLIC_LOG_LEVEL', 'debug') as 'debug' | 'info' | 'warn' | 'error',
+    maxEntries: getEnvNumber('EXPO_PUBLIC_LOG_MAX_ENTRIES', 1000),
+    showAlerts: getEnvBoolean('EXPO_PUBLIC_LOG_SHOW_ALERTS', false),
+    alertOnError: getEnvBoolean('EXPO_PUBLIC_LOG_ALERT_ON_ERROR', true),
+    alertOnWarn: getEnvBoolean('EXPO_PUBLIC_LOG_ALERT_ON_WARN', false),
+    persistLogs: getEnvBoolean('EXPO_PUBLIC_LOG_PERSIST', true)
+  },
+
   // Supabase Configuration (if used)
   supabase: {
     url: getEnvVar('EXPO_PUBLIC_SUPABASE_URL', ''),

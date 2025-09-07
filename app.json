@@ -22,7 +22,13 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.ndavat.xfinityrouterapp"
+      "package": "com.ndavat.xfinityrouterapp",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_WIFI_STATE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -35,6 +41,9 @@
         "projectId": "7dada0cb-17bc-4917-ae27-dd8f8edbb1e7"
       }
     },
-    "owner": "ndavat"
+    "owner": "ndavat",
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

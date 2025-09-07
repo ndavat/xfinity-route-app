@@ -5,6 +5,9 @@ import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RouterConnectionService } from '../services/RouterConnectionService';
 import { Config, ConfigUtils } from '../utils/config';
+import { LogManager } from '../services/LogManager';
+import LogAlert from '../components/LogAlert';
+import { LogTestHelper } from '../utils/logTestHelper';
 import { toast } from 'sonner-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -23,6 +26,7 @@ export default function SettingsScreen() {
   const [useDebugMode, setUseDebugMode] = useState(Config.app.debugMode);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(Config.development.enableAdvancedSettings);
   const [useMockData, setUseMockData] = useState(Config.app.mockDataMode);
+  const [showLogAlert, setShowLogAlert] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -449,6 +453,48 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Log Settings</Text>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setShowLogAlert(true)}
+          >
+            <MaterialIcons name="list-alt" size={18} color="#4CAF50" />
+            <Text style={[styles.actionButtonText, { color: '#4CAF50' }]}>View Logs</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('LogViewer' as never)}
+          >
+            <MaterialIcons name="bug-report" size={18} color="#2196F3" />
+            <Text style={[styles.actionButtonText, { color: '#2196F3' }]}>Open Log Viewer</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => {
+              LogTestHelper.generateTestLogs();
+              toast.success('Test logs generated');
+            }}
+          >
+            <MaterialIcons name="add" size={18} color="#FF9800" />
+            <Text style={[styles.actionButtonText, { color: '#FF9800' }]}>Generate Test Logs</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => {
+              LogTestHelper.testLogAlerts();
+              toast.success('Log alerts tested');
+            }}
+          >
+            <MaterialIcons name="notifications" size={18} color="#9C27B0" />
+            <Text style={[styles.actionButtonText, { color: '#9C27B0' }]}>Test Log Alerts</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={[
@@ -492,6 +538,13 @@ export default function SettingsScreen() {
           <Text style={styles.appCopyright}>© 2025 All rights reserved</Text>
         </View>
       </ScrollView>
+
+      {/* Log Alert Modal */}
+      <LogAlert
+        visible={showLogAlert}
+        onClose={() => setShowLogAlert(false)}
+        title="Application Logs"
+      />
     </SafeAreaView>
   );
 }

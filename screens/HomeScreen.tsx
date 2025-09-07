@@ -8,6 +8,8 @@ import { toast } from 'sonner-native';
 import { RouterConnectionService } from '../services/RouterConnectionService';
 import { EnvironmentAlert } from '../components/EnvironmentAlert';
 import { Config } from '../utils/config';
+import { LogManager } from '../services/LogManager';
+import LogAlert from '../components/LogAlert';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -18,6 +20,12 @@ export default function HomeScreen() {
     uptime: 'Unknown',
     connectedDevices: 0,
   });
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [restartProgress, setRestartProgress] = useState<{
+    status: 'restarting' | 'checking' | 'online' | 'failed';
+    message: string;
+  } | null>(null);
+  const [showLogAlert, setShowLogAlert] = useState(false);
 
   useEffect(() => {
     checkRouterConnection();
@@ -255,11 +263,37 @@ export default function HomeScreen() {
             )} */}
 
             {renderFeatureCard(
-              'settings', 
-              'Router Settings', 
+              'settings',
+              'Router Settings',
               'Configure router settings and credentials',
               'Settings'
             )}
+
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => navigation.navigate('LogViewer' as never)}
+            >
+              <View style={styles.cardHeader}>
+                <MaterialIcons name="list-alt" size={24} color="#4CAF50" />
+                <Text style={styles.cardTitle}>Application Logs</Text>
+              </View>
+              <Text style={styles.cardDescription}>
+                View application logs and debugging information
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => setShowLogAlert(true)}
+            >
+              <View style={styles.cardHeader}>
+                <MaterialIcons name="bug-report" size={24} color="#FF9800" />
+                <Text style={styles.cardTitle}>Quick Log View</Text>
+              </View>
+              <Text style={styles.cardDescription}>
+                View recent logs in a popup dialog
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity 
               style={[styles.card, styles.restartCard]} 
@@ -277,6 +311,13 @@ export default function HomeScreen() {
           </ScrollView>
         </>
       )}
+
+      {/* Log Alert Modal */}
+      <LogAlert
+        visible={showLogAlert}
+        onClose={() => setShowLogAlert(false)}
+        title="Application Logs"
+      />
     </SafeAreaView>
   );
 }
