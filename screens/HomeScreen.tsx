@@ -11,6 +11,8 @@ import { Config } from '../utils/config';
 import { LogManager } from '../services/LogManager';
 import LogAlert from '../components/LogAlert';
 import ConnectionStatusAlert from '../components/ConnectionStatusAlert';
+import BrowserAuthModal from '../components/BrowserAuthModal';
+import { BrowserAuthService } from '../services/BrowserAuthService';
 
 export default function HomeScreen() {
   const navigation = useNavigation();
@@ -27,10 +29,32 @@ export default function HomeScreen() {
     message: string;
   } | null>(null);
   const [showLogAlert, setShowLogAlert] = useState(false);
+  const [showBrowserAuth, setShowBrowserAuth] = useState(false);
+  const [routerIP, setRouterIP] = useState('10.0.0.1');
+  const [hasAuthToken, setHasAuthToken] = useState(false);
 
   useEffect(() => {
     checkRouterConnection();
+    checkAuthenticationStatus();
   }, []);
+
+  const checkAuthenticationStatus = async () => {
+    try {
+      const config = await RouterConnectionService.getRouterConfig();
+      setRouterIP(config.ip);
+
+      const hasToken = await BrowserAuthService.hasValidToken(config.ip);
+      setHasAuthToken(hasToken);
+
+      if (hasToken) {
+        console.log('✅ Valid authentication token found');
+      } else {
+        console.log('⚠️ No valid authentication token found');
+      }
+    } catch (error) {
+      console.error('Failed to check authentication status:', error);
+    }
+  };
 
   const checkRouterConnection = async () => {
     setIsLoading(true);
@@ -170,6 +194,54 @@ export default function HomeScreen() {
     );
   };
 
+  // Browser authentication handlers
+  const handleBrowserAuthSuccess = async (token: any) => {
+    console.log('✅ Browser authentication successful');
+    setHasAuthToken(true);
+    setShowBrowserAuth(false);
+
+    // Refresh router connection and info
+    await checkRouterConnection();
+
+    Alert.alert(
+      'Authentication Successful',
+      'You can now access all router features!',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleBrowserAuthFailed = (error: string) => {
+    console.error('❌ Browser authentication failed:', error);
+    Alert.alert(
+      'Authentication Failed',
+      `Failed to authenticate: ${error}`,
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleOpenBrowserAuth = () => {
+    setShowBrowserAuth(true);
+  };
+
+  const handleClearAuthToken = async () => {
+    Alert.alert(
+      'Clear Authentication',
+      'Are you sure you want to clear the saved authentication token?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await BrowserAuthService.clearAuthToken();
+            setHasAuthToken(false);
+            Alert.alert('Token Cleared', 'Authentication token has been cleared.');
+          }
+        }
+      ]
+    );
+  };
+
   // Function to render feature cards
   const renderFeatureCard = (icon: string, title: string, description: string, screenName: string) => (
     <TouchableOpacity 
@@ -235,6 +307,42 @@ export default function HomeScreen() {
               console.log('App is running in mock data mode');
             }
           }} />
+
+          {/* Authentication Status */}
+          {isConnected && (
+            <View style={styles.authCard}>
+              <View style={styles.authHeader}>
+                <MaterialIcons
+                  name={hasAuthToken ? "verified-user" : "security"}
+                  size={20}
+                  color={hasAuthToken ? "#4caf50" : "#ff9800"}
+                />
+                <Text style={styles.authTitle}>
+                  Authentication: {hasAuthToken ? 'Authenticated' : 'Not Authenticated'}
+                </Text>
+              </View>
+
+              <View style={styles.authActions}>
+                {!hasAuthToken ? (
+                  <TouchableOpacity
+                    style={styles.authButton}
+                    onPress={handleOpenBrowserAuth}
+                  >
+                    <MaterialIcons name="login" size={16} color="#fff" />
+                    <Text style={styles.authButtonText}>Login via Browser</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.authButton, styles.authButtonSecondary]}
+                    onPress={handleClearAuthToken}
+                  >
+                    <MaterialIcons name="logout" size={16} color="#666" />
+                    <Text style={[styles.authButtonText, styles.authButtonTextSecondary]}>Clear Token</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
 
           <View style={[styles.statusCard, isConnected ? styles.statusConnected : styles.statusDisconnected]}>
             <View style={styles.statusHeader}>
@@ -326,6 +434,15 @@ export default function HomeScreen() {
         visible={showLogAlert}
         onClose={() => setShowLogAlert(false)}
         title="Application Logs"
+      />
+
+      {/* Browser Authentication Modal */}
+      <BrowserAuthModal
+        visible={showBrowserAuth}
+        routerIP={routerIP}
+        onClose={() => setShowBrowserAuth(false)}
+        onAuthSuccess={handleBrowserAuthSuccess}
+        onAuthFailed={handleBrowserAuthFailed}
       />
     </SafeAreaView>
   );
@@ -423,5 +540,55 @@ const styles = StyleSheet.create({
   },
   restartText: {
     color: '#D32F2F',
+  },
+  // Authentication card styles
+  authCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    marginTop: 8,
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  authHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  authTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginLeft: 8,
+  },
+  authActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  authButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0261C2',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    gap: 6,
+  },
+  authButtonSecondary: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  authButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  authButtonTextSecondary: {
+    color: '#666',
   },
 });

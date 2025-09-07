@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { parse } from 'node-html-parser';
 import axios from 'axios';
 import { Config, ConfigUtils } from '../utils/config';
+import { BrowserAuthService } from './BrowserAuthService';
 
 // Default router credentials (loaded from environment variables)
 const DEFAULT_ROUTER_CONFIG = ConfigUtils.getDefaultRouterConfig();
@@ -163,8 +164,8 @@ export class RouterConnectionService {
     };
   }
 
-  // Environment detection
-  static detectEnvironment(): { platform: string; canAccessLocalNetwork: boolean; reason: string } {
+  // Environment detection with React Native network capability check
+  static detectEnvironment(): { platform: string; canAccessLocalNetwork: boolean; reason: string; isSimulator?: boolean } {
     // Check if we're in a web browser
     if (typeof window !== 'undefined' && window.location) {
       return {
@@ -176,10 +177,18 @@ export class RouterConnectionService {
 
     // Check if we're in React Native
     if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+      // Additional check for simulator/emulator which might have network restrictions
+      const isSimulator = typeof global !== 'undefined' &&
+                          (global.__DEV__ === true ||
+                           process.env.NODE_ENV === 'development');
+
       return {
         platform: 'react-native',
         canAccessLocalNetwork: true,
-        reason: 'React Native should support local network access'
+        reason: isSimulator ?
+          'React Native development environment - network access may be limited' :
+          'React Native should support local network access',
+        isSimulator
       };
     }
 
@@ -199,16 +208,20 @@ export class RouterConnectionService {
     };
   }
 
-  // Enhanced network connectivity check with multiple methods
-  static async checkNetworkConnectivity(ip: string): Promise<{ isReachable: boolean; error?: string; method?: string }> {
+  // Optimized network connectivity check with faster timeouts
+  static async checkNetworkConnectivity(ip: string, verbose: boolean = false): Promise<{ isReachable: boolean; error?: string; method?: string }> {
     const environment = this.detectEnvironment();
 
-    console.log('🔍 Checking network connectivity to:', ip);
-    console.log('Environment:', environment);
+    if (verbose) {
+      console.log('🔍 Checking network connectivity to:', ip);
+      console.log('Environment:', environment);
+    }
 
-    // If we're in a web environment, skip network checks and suggest alternatives
+    // If we're in a web environment, skip network checks
     if (!environment.canAccessLocalNetwork) {
-      console.log('⚠️ Environment does not support local network access:', environment.reason);
+      if (verbose) {
+        console.log('⚠️ Environment does not support local network access:', environment.reason);
+      }
       return {
         isReachable: false,
         error: 'ENVIRONMENT_RESTRICTION',
@@ -216,48 +229,54 @@ export class RouterConnectionService {
       };
     }
 
-    // Try multiple connection methods
-    const methods = [
-      { name: 'HEAD', fn: () => axios.head(`http://${ip}`, { timeout: 3000, validateStatus: () => true }) },
-      { name: 'GET', fn: () => axios.get(`http://${ip}`, { timeout: 3000, validateStatus: () => true }) },
-      { name: 'OPTIONS', fn: () => axios.options(`http://${ip}`, { timeout: 3000, validateStatus: () => true }) }
-    ];
+    // Use faster timeout for quicker fallback (1.5 seconds instead of 3)
+    const timeout = environment.isSimulator ? 1000 : 1500;
 
-    for (const method of methods) {
-      try {
-        console.log(`Trying ${method.name} request to ${ip}...`);
-        const response = await method.fn();
+    // Try only the most reliable method first (HEAD request)
+    try {
+      if (verbose) console.log(`Testing ${ip} with HEAD request...`);
 
+      const response = await axios.head(`http://${ip}`, {
+        timeout,
+        validateStatus: () => true,
+        headers: {
+          'User-Agent': 'XfinityRouterApp/1.0'
+        }
+      });
+
+      if (verbose) {
         console.log('✅ Network connectivity check passed:', {
-          method: method.name,
+          method: 'HEAD',
           status: response.status,
           reachable: true
         });
+      }
 
-        return { isReachable: true, method: method.name };
-      } catch (error: any) {
-        console.log(`❌ ${method.name} request failed:`, {
+      return { isReachable: true, method: 'HEAD' };
+    } catch (error: any) {
+      if (verbose) {
+        console.log(`❌ HEAD request failed:`, {
           error: error.message,
           code: error.code
         });
+      }
 
-        // If it's not a network error, the host might be reachable but not responding to this method
-        if (error.code !== 'ERR_NETWORK' && error.code !== 'ECONNREFUSED') {
-          console.log('Host appears reachable but not responding to', method.name);
-          return { isReachable: true, method: method.name, error: 'partial_response' };
-        }
+      // If it's not a network error, the host might be reachable
+      if (error.code !== 'ERR_NETWORK' && error.code !== 'ECONNREFUSED' && error.code !== 'ETIMEDOUT') {
+        if (verbose) console.log('Host appears reachable but not responding properly');
+        return { isReachable: true, method: 'HEAD', error: 'partial_response' };
       }
     }
 
     return {
       isReachable: false,
       error: 'ERR_NETWORK',
-      method: 'all_methods_failed'
+      method: 'HEAD_failed'
     };
   }
 
-  // Try to find the correct router IP address
-  static async findRouterIP(): Promise<{ ip: string | null; environmentIssue: boolean; reason?: string }> {
+  // Optimized router IP finder with caching and faster scanning
+  static async findRouterIP(excludeIP?: string): Promise<{ ip: string | null; environmentIssue: boolean; reason?: string }> {
     const environment = this.detectEnvironment();
 
     // Check if environment supports local network access
@@ -277,21 +296,81 @@ export class RouterConnectionService {
       '192.168.0.1',   // Another common default
       '192.168.1.254', // Some routers use this
       '10.1.10.1'      // Some Xfinity routers
-    ];
+    ].filter(ip => ip !== excludeIP); // Exclude already tested IP
 
-    console.log('🔍 Searching for router IP address...');
+    console.log('🔍 Scanning for router at alternative IP addresses...');
 
-    for (const ip of commonRouterIPs) {
-      console.log(`Testing IP: ${ip}`);
-      const result = await this.checkNetworkConnectivity(ip);
-      if (result.isReachable) {
-        console.log(`✅ Found router at: ${ip}`);
-        return { ip, environmentIssue: false };
+    // Test IPs in parallel for faster scanning
+    const testPromises = commonRouterIPs.map(async (ip) => {
+      const result = await this.checkNetworkConnectivity(ip, false); // Non-verbose
+      return { ip, result };
+    });
+
+    try {
+      const results = await Promise.all(testPromises);
+
+      for (const { ip, result } of results) {
+        if (result.isReachable) {
+          console.log(`✅ Found router at: ${ip}`);
+          return { ip, environmentIssue: false };
+        }
       }
+    } catch (error) {
+      console.log('❌ Error during parallel IP scanning:', error);
     }
 
     console.log('❌ No router found at common IP addresses');
     return { ip: null, environmentIssue: false, reason: 'no_router_found' };
+  }
+
+  // Quick network diagnostic to identify the issue
+  static async diagnoseNetworkIssue(): Promise<{
+    issue: string;
+    description: string;
+    suggestions: string[];
+  }> {
+    const environment = this.detectEnvironment();
+
+    // Environment-based diagnosis
+    if (!environment.canAccessLocalNetwork) {
+      return {
+        issue: 'Environment Restriction',
+        description: environment.reason,
+        suggestions: [
+          'Use the mobile app instead of web browser',
+          'Try on a physical device instead of simulator',
+          'Use mock data mode for demonstration purposes'
+        ]
+      };
+    }
+
+    // Test internet connectivity first
+    try {
+      await axios.get('https://httpbin.org/status/200', { timeout: 2000 });
+    } catch (error) {
+      return {
+        issue: 'No Internet Connection',
+        description: 'Device appears to be offline or has no internet access',
+        suggestions: [
+          'Check WiFi or cellular connection',
+          'Verify internet connectivity',
+          'Try connecting to a different network'
+        ]
+      };
+    }
+
+    // If we reach here, internet works but local network doesn't
+    return {
+      issue: 'Local Network Access Issue',
+      description: 'Internet works but cannot access local router',
+      suggestions: [
+        'Ensure device is connected to router\'s WiFi network',
+        'Check if router web interface is enabled',
+        'Verify router is powered on and functioning',
+        'Try accessing router web interface in browser',
+        'Check for network firewall blocking local connections'
+      ]
+    };
   }
 
   // Get connection status with detailed information
@@ -346,6 +425,149 @@ export class RouterConnectionService {
     };
   }
 
+  // Make authenticated API call to router
+  static async makeAuthenticatedRequest(
+    url: string,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+    data?: any,
+    routerIP?: string
+  ): Promise<any> {
+    try {
+      // Get authentication headers
+      const authHeaders = await BrowserAuthService.getAuthHeaders(routerIP);
+
+      console.log('🔐 Making authenticated request to:', url);
+      console.log('Auth headers available:', Object.keys(authHeaders).length > 0);
+
+      const config: any = {
+        method,
+        url,
+        timeout: Config.api.timeout,
+        validateStatus: (status: number) => status < 500, // Accept 4xx as valid responses
+        headers: {
+          'Accept': 'application/json, text/html, */*',
+          'Content-Type': method === 'POST' || method === 'PUT' ? 'application/json' : undefined,
+          'User-Agent': 'Mozilla/5.0 (compatible; XfinityRouterApp/1.0)',
+          ...authHeaders
+        }
+      };
+
+      if (data && (method === 'POST' || method === 'PUT')) {
+        config.data = data;
+      }
+
+      const response = await axios(config);
+
+      console.log('✅ Authenticated request successful:', {
+        status: response.status,
+        hasData: !!response.data
+      });
+
+      return response;
+    } catch (error: any) {
+      console.error('❌ Authenticated request failed:', {
+        error: error.message,
+        code: error.code,
+        status: error.response?.status
+      });
+
+      // If authentication failed, clear the token
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.log('🔑 Authentication failed, clearing saved token');
+        await BrowserAuthService.clearAuthToken();
+      }
+
+      throw error;
+    }
+  }
+
+  // Check if router requires authentication and if we have valid token
+  static async checkAuthenticationStatus(routerIP: string): Promise<{
+    requiresAuth: boolean;
+    hasValidToken: boolean;
+    canProceed: boolean;
+    message: string;
+  }> {
+    try {
+      console.log('🔍 Checking authentication status for:', routerIP);
+
+      // Check if we have a valid token
+      const hasValidToken = await BrowserAuthService.hasValidToken(routerIP);
+
+      // Try to access a protected endpoint to see if auth is required
+      try {
+        const response = await axios.get(`http://${routerIP}/api/status`, {
+          timeout: 5000,
+          validateStatus: () => true
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          return {
+            requiresAuth: true,
+            hasValidToken,
+            canProceed: hasValidToken,
+            message: hasValidToken ?
+              'Authentication required - using saved token' :
+              'Authentication required - please login through browser'
+          };
+        } else if (response.status === 200) {
+          return {
+            requiresAuth: false,
+            hasValidToken,
+            canProceed: true,
+            message: 'Router accessible without authentication'
+          };
+        }
+      } catch (error) {
+        // If endpoint doesn't exist, try the main page
+        try {
+          const mainResponse = await axios.get(`http://${routerIP}`, {
+            timeout: 5000,
+            validateStatus: () => true
+          });
+
+          // Check if response contains login form or authentication challenge
+          const responseText = mainResponse.data?.toString() || '';
+          const requiresAuth = responseText.toLowerCase().includes('login') ||
+                              responseText.toLowerCase().includes('password') ||
+                              responseText.toLowerCase().includes('authentication');
+
+          return {
+            requiresAuth,
+            hasValidToken,
+            canProceed: !requiresAuth || hasValidToken,
+            message: requiresAuth ?
+              (hasValidToken ? 'Router requires authentication - using saved token' : 'Router requires authentication - please login') :
+              'Router accessible without authentication'
+          };
+        } catch (mainError) {
+          return {
+            requiresAuth: true,
+            hasValidToken,
+            canProceed: hasValidToken,
+            message: 'Cannot determine auth requirements - assuming authentication needed'
+          };
+        }
+      }
+
+      return {
+        requiresAuth: false,
+        hasValidToken,
+        canProceed: true,
+        message: 'Router status unknown - proceeding without authentication'
+      };
+
+    } catch (error: any) {
+      console.error('❌ Failed to check authentication status:', error.message);
+      return {
+        requiresAuth: true,
+        hasValidToken: false,
+        canProceed: false,
+        message: `Authentication check failed: ${error.message}`
+      };
+    }
+  }
+
   // Check connection to router
   static async checkConnection() {
     try {
@@ -362,11 +584,13 @@ export class RouterConnectionService {
         useMockData: config.useMockData
       });
 
-      // Perform network connectivity check first
+      // Perform optimized network connectivity check
       let routerIP = config.ip;
-      const connectivityCheck = await this.checkNetworkConnectivity(routerIP);
+      console.log('🔍 Testing connection to configured router:', routerIP);
+
+      const connectivityCheck = await this.checkNetworkConnectivity(routerIP, true); // Verbose for initial check
       if (!connectivityCheck.isReachable) {
-        console.error('❌ Pre-connection network check failed for', routerIP, ':', connectivityCheck.error);
+        console.error('❌ Router not accessible at', routerIP, ':', connectivityCheck.error);
 
         // Check if this is an environment issue
         if (connectivityCheck.error === 'ENVIRONMENT_RESTRICTION') {
@@ -380,10 +604,8 @@ export class RouterConnectionService {
           return true; // Return success so the app can continue with mock data
         }
 
-        console.log('🔍 Attempting to find router at other common IP addresses...');
-
-        // Try to find the router at other common IP addresses
-        const routerSearch = await this.findRouterIP();
+        // Try to find the router at other common IP addresses (excluding the one we just tested)
+        const routerSearch = await this.findRouterIP(routerIP);
         if (routerSearch.environmentIssue) {
           console.error('🌐 Environment Issue:', routerSearch.reason);
           console.error('📱 Automatically switching to Mock Data Mode');
@@ -410,20 +632,15 @@ export class RouterConnectionService {
           console.error('  • Network firewall blocking connections');
           console.error('  • Router uses a non-standard IP address');
           console.error('');
-          console.error('🔧 Troubleshooting steps:');
-          console.error('  1. Check router power and status lights');
-          console.error('  2. Verify WiFi connection to router');
-          console.error('  3. Try accessing router web interface in browser');
-          console.error('  4. Check router label for correct IP address');
-          console.error('  5. Restart router if necessary');
-          console.error('');
-          console.error('📱 Switching to Mock Data Mode for now...');
+          console.error('📱 Switching to Mock Data Mode for demonstration...');
 
           // Fall back to mock mode if no router found
           await AsyncStorage.setItem('use_mock_data', 'true');
           console.log('✅ Mock data mode enabled - app will use sample data');
           return true; // Allow app to continue with mock data
         }
+      } else {
+        console.log('✅ Router accessible at configured IP:', routerIP);
       }
 
       // Update baseUrl with the correct router IP
@@ -594,27 +811,21 @@ export class RouterConnectionService {
         };
       }
 
-      // First ensure we're authenticated
-      const isAuthenticated = await this.authenticate();
-      if (!isAuthenticated) {
-        throw new Error('Authentication failed');
-      }
-      
       const config = await this.getRouterConfig();
       const baseUrl = `http://${config.ip}`;
-      
-      // Request router status page
-      const response = await axios.get(`${baseUrl}/status`, {
-        withCredentials: true,
-      });
+
+      // Check authentication status
+      const authStatus = await this.checkAuthenticationStatus(config.ip);
+      console.log('🔐 Authentication status:', authStatus.message);
+
+      // Request router status page with authentication if available
+      const response = await this.makeAuthenticatedRequest(`${baseUrl}/status`, 'GET', undefined, config.ip);
       
       // This is a placeholder for parsing router-specific HTML/JSON
       // Actual implementation depends on your specific router's web interface
       // Use parse() for HTML content parsing
       // Navigate to network_setup.php to get Internet status and System Uptime
-      const networkSetupResponse = await axios.get(`${baseUrl}/network_setup.php`, {
-        withCredentials: true,
-      });
+      const networkSetupResponse = await this.makeAuthenticatedRequest(`${baseUrl}/network_setup.php`, 'GET', undefined, config.ip);
       
       // Parse the HTML response
       const networkSetupRoot = parse(networkSetupResponse.data);
